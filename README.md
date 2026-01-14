@@ -1,3 +1,4 @@
+
 # Claude Code Project Template
 
 A structured template for building applications with Claude Code using the **PIV Loop** workflow (Prime → Implement → Validate).
@@ -32,51 +33,77 @@ This template provides slash commands, reference documentation, and best practic
 
 ## Quick Start
 
-### Option A: New Project
+### Option A: New Project (GitHub Template) ⭐ Recommended
 
-Use this template to start a fresh project.
+The easiest way — creates a fresh repository with no git history from this template.
+
+1. **Click "Use this template"** (green button at top of this repo)
+2. **Select "Create a new repository"**
+3. **Name your repository** and choose public/private
+4. **Click "Create repository"**
+
+You now have a clean copy with its own git history. Clone and start building:
 
 ```bash
-# 1. Fork or clone this template
-git clone https://github.com/journeyman33/habit-tracker.git my-new-project
+git clone https://github.com/YOUR_USERNAME/your-new-project.git
+cd your-new-project
+claude  # Start Claude Code
+```
+
+---
+
+### Option B: New Project (Manual Clone)
+
+If you prefer command-line or need more control:
+
+```bash
+# 1. Clone the template
+git clone https://github.com/journeyman33/claude-code-template.git my-new-project
 cd my-new-project
 
-# 2. Switch to the template branch
-git checkout myworkshop
-
-# 3. Remove the git history and start fresh
+# 2. Remove git history and start fresh
 rm -rf .git
 git init
 git add .
 git commit -m "Initial commit from Claude Code template"
 
-# 4. Create your GitHub repo and push
+# 3. Create your GitHub repo and push
 gh repo create my-new-project --public --source=. --push
-# Or manually: git remote add origin <your-repo-url> && git push -u origin main
+# Or manually:
+# git remote add origin https://github.com/YOUR_USERNAME/my-new-project.git
+# git push -u origin main
 
-# 5. Open in your editor and start Claude Code
-cd my-new-project
-claude  # Start Claude Code CLI
+# 4. Start Claude Code
+claude
 ```
 
-### Option B: Existing Project
+---
 
-Add the Claude Code workflow to an existing repository.
+### Option C: Existing Project
+
+Add the Claude Code workflow to a repository you already have.
 
 ```bash
 # 1. Clone the template temporarily
-git clone --branch myworkshop --depth 1 https://github.com/journeyman33/habit-tracker.git /tmp/claude-template
+git clone --depth 1 \
+  https://github.com/journeyman33/claude-code-template.git /tmp/claude-template
 
 # 2. Copy the .claude directory to your project
-cp -r /tmp/claude-template/.claude /path/to/your/existing/project/
+cp -r /tmp/claude-template/.claude /path/to/your/project/
 
 # 3. Copy the CLAUDE.md template
-cp /tmp/claude-template/CLAUDE.md /path/to/your/existing/project/
+cp /tmp/claude-template/CLAUDE.template.md /path/to/your/project/CLAUDE.md
 
 # 4. Clean up
 rm -rf /tmp/claude-template
 
-# 5. Customize CLAUDE.md for your project (see Step 2 below)
+# 5. Customize CLAUDE.md for your project
+cd /path/to/your/project
+# Edit CLAUDE.md with your project details
+
+# 6. Commit
+git add .claude/ CLAUDE.md
+git commit -m "feat: add Claude Code workflow"
 ```
 
 ---
