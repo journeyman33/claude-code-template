@@ -1,140 +1,379 @@
-# Habit Tracker
+# Claude Code Project Template
 
-> **Workshop participants:** For the template and starting point, switch to the [`workshop`](https://github.com/coleam00/habit-tracker/tree/workshop) branch.
+A structured template for building applications with Claude Code using the **PIV Loop** workflow (Prime → Implement → Validate).
 
-A personal habit tracking web application for building and maintaining daily habits through streak tracking, completion rates, and calendar visualization. Built with FastAPI (Python) backend and React frontend, this local-first application runs entirely on your machine with no account required—just simple, distraction-free habit tracking.
+This template provides slash commands, reference documentation, and best practices for AI-assisted development.
 
-## Prerequisites
+---
 
-- **Python 3.11+** with [uv](https://github.com/astral-sh/uv) package manager
-- **Node.js 18+** with npm
-- **Git** (optional, for cloning)
+## What's Included
+
+```
+.claude/
+├── commands/
+│   ├── core_piv_loop/       # Prime, plan, execute commands
+│   ├── validation/          # Code review, testing, reports
+│   ├── github_bug_fix/      # RCA and bug fix workflow
+│   ├── commit.md            # Atomic commit helper
+│   ├── create-prd.md        # PRD generator
+│   └── init-project.md      # Project initialization
+├── reference/
+│   ├── fastapi-best-practices.md
+│   ├── caddy-patterns.md
+│   ├── uv-python-workflow.md
+│   ├── deployment-best-practices.md
+│   ├── sqlite-best-practices.md
+│   ├── react-frontend-best-practices.md
+│   └── testing-and-logging.md
+└── PRD.md                   # Product Requirements Document
+```
+
+---
 
 ## Quick Start
 
-### 1. Clone and Setup Backend
+### Option A: New Project
+
+Use this template to start a fresh project.
 
 ```bash
-cd backend
-uv sync
-uv run uvicorn app.main:app --reload --port 8000
+# 1. Fork or clone this template
+git clone https://github.com/journeyman33/habit-tracker.git my-new-project
+cd my-new-project
+
+# 2. Switch to the template branch
+git checkout myworkshop
+
+# 3. Remove the git history and start fresh
+rm -rf .git
+git init
+git add .
+git commit -m "Initial commit from Claude Code template"
+
+# 4. Create your GitHub repo and push
+gh repo create my-new-project --public --source=. --push
+# Or manually: git remote add origin <your-repo-url> && git push -u origin main
+
+# 5. Open in your editor and start Claude Code
+cd my-new-project
+claude  # Start Claude Code CLI
 ```
 
-Backend runs at http://localhost:8000 (API docs at http://localhost:8000/docs)
+### Option B: Existing Project
 
-### 2. Setup Frontend (new terminal)
+Add the Claude Code workflow to an existing repository.
 
 ```bash
-cd frontend
-npm install
-npm run dev
+# 1. Clone the template temporarily
+git clone --branch myworkshop --depth 1 https://github.com/journeyman33/habit-tracker.git /tmp/claude-template
+
+# 2. Copy the .claude directory to your project
+cp -r /tmp/claude-template/.claude /path/to/your/existing/project/
+
+# 3. Copy the CLAUDE.md template
+cp /tmp/claude-template/CLAUDE.md /path/to/your/existing/project/
+
+# 4. Clean up
+rm -rf /tmp/claude-template
+
+# 5. Customize CLAUDE.md for your project (see Step 2 below)
 ```
 
-Frontend runs at http://localhost:5173
+---
 
-### 3. Open the App
+## The PIV Loop Workflow
 
-Navigate to **http://localhost:5173** in your browser. Create your first habit and start tracking!
-
-## Architecture
+This template follows the **PIV Loop** — a structured approach to AI-assisted development:
 
 ```
-┌─────────────────┐     HTTP/JSON      ┌─────────────────┐
-│  React + Vite   │ ◄───────────────► │    FastAPI      │
-│   Port 5173     │                    │   Port 8000     │
-└─────────────────┘                    └────────┬────────┘
-                                                │
-                                       ┌─────────────────┐
-                                       │     SQLite      │
-                                       │   habits.db     │
-                                       └─────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│    ┌─────────┐     ┌─────────────┐     ┌──────────┐    │
+│    │  PRIME  │ ──► │  IMPLEMENT  │ ──► │ VALIDATE │    │
+│    └─────────┘     └─────────────┘     └──────────┘    │
+│         │                                    │          │
+│         └────────────────────────────────────┘          │
+│                      (iterate)                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Tech Stack
+| Phase | What Happens | Commands |
+|-------|--------------|----------|
+| **Prime** | Load context, understand codebase | `/core_piv_loop:prime` |
+| **Implement** | Plan and execute features | `/core_piv_loop:plan-feature`, `/core_piv_loop:execute` |
+| **Validate** | Test, review, document | `/validation:validate`, `/validation:code-review` |
 
-| Layer | Technology |
-|-------|------------|
-| Backend | Python 3.11, FastAPI, SQLAlchemy, SQLite |
-| Frontend | React 18, Vite, TanStack Query, Tailwind CSS |
-| Date Handling | date-fns |
+---
 
-### Project Structure
+## Step-by-Step: Building a New Project
 
-```
-habit-tracker/
-├── backend/
-│   ├── app/
-│   │   ├── main.py           # FastAPI entry point
-│   │   ├── database.py       # SQLite connection
-│   │   ├── models.py         # SQLAlchemy models (Habit, Completion)
-│   │   ├── schemas.py        # Pydantic request/response schemas
-│   │   └── routers/          # API endpoints
-│   │       ├── habits.py     # CRUD + streak calculation
-│   │       └── completions.py
-│   └── tests/                # pytest tests
-├── frontend/
-│   ├── src/
-│   │   ├── features/
-│   │   │   ├── habits/       # Habit components, hooks, API
-│   │   │   └── calendar/     # Calendar view components
-│   │   ├── components/ui/    # Shared UI components
-│   │   ├── pages/            # Route pages
-│   │   └── lib/              # Utilities
-│   └── package.json
-└── README.md
+### Step 1: Define Your Project
+
+Start a conversation with Claude Code about what you want to build.
+
+```bash
+claude
 ```
 
-## Features
+Discuss with Claude:
+- What problem does this solve?
+- Who is the target user?
+- What are the core features (MVP)?
+- What tech stack? (FastAPI, React, etc.)
 
-- **Daily Habit Tracking** — Create habits, mark them complete with one click
-- **Streak Tracking** — See current streak and completion rate per habit
-- **Calendar View** — Monthly grid showing completion history with color-coded days
-- **Planned Absences** — Skip days without breaking your streak
-- **Local & Private** — All data stored locally in SQLite, no account needed
+### Step 2: Create Your PRD
 
-## API Endpoints
+Use the `/create-prd` command to generate a Product Requirements Document.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/habits` | List all habits with stats |
-| POST | `/api/habits` | Create a new habit |
-| POST | `/api/habits/{id}/complete` | Mark habit complete for a date |
-| DELETE | `/api/habits/{id}/completions/{date}` | Undo a completion |
-| GET | `/api/habits/{id}/completions` | Get completion history |
+```
+/create-prd
+```
 
-Full API documentation available at http://localhost:8000/docs when backend is running.
+Claude will ask clarifying questions and generate `.claude/PRD.md` with:
+- Project overview
+- User stories
+- Feature specifications
+- Technical requirements
+- API design
+- Database schema
 
-## Claude Commands
+**Review and refine the PRD** — this is your project blueprint.
 
-Slash commands for Claude Code to assist with development workflows. The AI coding workflow used to build this application follows the PIV (Prime, Implement, Validate) loop shown below:
+### Step 3: Customize CLAUDE.md
 
-![PIV Loop Diagram](PIVLoopDiagram.png)
+Update `CLAUDE.md` with your project specifics:
 
-### Planning & Execution
+```markdown
+# My Project Name
+
+Brief description of what this project does.
+
+## Tech Stack
+
+- **Backend**: Python 3.12+, FastAPI, SQLAlchemy, SQLite/Postgres
+- **Frontend**: React 18, Vite, Tailwind CSS, TanStack Query
+- **Testing**: pytest, Playwright
+
+## Project Structure
+
+(Fill in once scaffolded)
+
+## Commands
+
+(Add your specific dev commands)
+
+## Reference Documentation
+
+| Document | When to Read |
+|----------|--------------|
+| `.claude/PRD.md` | Understanding requirements |
+| `.claude/reference/fastapi-best-practices.md` | Building API endpoints |
+| ... | ... |
+```
+
+### Step 4: Prime Claude
+
+Load the project context:
+
+```
+/core_piv_loop:prime
+```
+
+This command tells Claude to:
+- Read `CLAUDE.md`
+- Read `.claude/PRD.md`
+- Understand the codebase structure
+- Load relevant reference docs
+
+### Step 5: Plan Your First Feature
+
+Pick a feature from your PRD and create an implementation plan:
+
+```
+/core_piv_loop:plan-feature
+```
+
+Claude will:
+- Analyze the codebase
+- Break down the feature into tasks
+- Create a step-by-step implementation plan
+- Save the plan to `.claude/plans/`
+
+### Step 6: Execute the Plan
+
+Implement the feature step-by-step:
+
+```
+/core_piv_loop:execute
+```
+
+Claude will:
+- Work through each task in the plan
+- Write code following the reference docs
+- Create tests as it goes
+- Ask for confirmation at key points
+
+### Step 7: Validate
+
+After implementation, run validation:
+
+```
+/validation:validate
+```
+
+This runs:
+- Linting (ruff)
+- Type checking
+- Unit tests
+- Integration tests
+- Build verification
+
+### Step 8: Code Review
+
+Get a technical review of your changes:
+
+```
+/validation:code-review
+```
+
+Fix any issues:
+
+```
+/validation:code-review-fix
+```
+
+### Step 9: Commit
+
+Create an atomic commit with proper formatting:
+
+```
+/commit
+```
+
+### Step 10: Repeat
+
+Go back to Step 5 for the next feature. Continue the PIV loop until your MVP is complete.
+
+---
+
+## Command Reference
+
+### Core PIV Loop
+
 | Command | Description |
 |---------|-------------|
 | `/core_piv_loop:prime` | Load project context and codebase understanding |
-| `/core_piv_loop:plan-feature` | Create comprehensive implementation plan with codebase analysis |
-| `/core_piv_loop:execute` | Execute an implementation plan step-by-step |
+| `/core_piv_loop:plan-feature` | Create implementation plan for a feature |
+| `/core_piv_loop:execute` | Execute the plan step-by-step |
 
 ### Validation
+
 | Command | Description |
 |---------|-------------|
-| `/validation:validate` | Run full validation: tests, linting, coverage, frontend build |
-| `/validation:code-review` | Technical code review on changed files |
-| `/validation:code-review-fix` | Fix issues found in code review |
-| `/validation:execution-report` | Generate report after implementing a feature |
-| `/validation:system-review` | Analyze implementation vs plan for process improvements |
+| `/validation:validate` | Run full validation suite |
+| `/validation:code-review` | Technical review of changed files |
+| `/validation:code-review-fix` | Fix issues found in review |
+| `/validation:execution-report` | Generate post-implementation report |
+| `/validation:system-review` | Analyze implementation vs plan |
 
 ### Bug Fixing
-| Command | Description |
-|---------|-------------|
-| `/github_bug_fix:rca` | Create root cause analysis document for a GitHub issue |
-| `/github_bug_fix:implement-fix` | Implement fix based on RCA document |
 
-### Misc
 | Command | Description |
 |---------|-------------|
-| `/commit` | Create atomic commit with appropriate tag (feat, fix, docs, etc.) |
-| `/init-project` | Install dependencies, start backend and frontend servers |
-| `/create-prd` | Generate Product Requirements Document from conversation |
+| `/github_bug_fix:rca` | Create root cause analysis for a GitHub issue |
+| `/github_bug_fix:implement-fix` | Implement fix based on RCA |
+
+### Utilities
+
+| Command | Description |
+|---------|-------------|
+| `/commit` | Create atomic commit with conventional format |
+| `/create-prd` | Generate PRD from conversation |
+| `/init-project` | Initialize project (install deps, start servers) |
+
+---
+
+## Tech Stack Defaults
+
+This template is configured for:
+
+| Layer | Default | Reference Doc |
+|-------|---------|---------------|
+| **Backend** | Python 3.12+, FastAPI, UV | `uv-python-workflow.md` |
+| **Database** | SQLite (dev) → Postgres (prod) | `sqlite-best-practices.md` |
+| **Frontend** | React 18, Vite, Tailwind | `react-frontend-best-practices.md` |
+| **Reverse Proxy** | Caddy | `caddy-patterns.md` |
+| **Deployment** | Docker Compose | `deployment-best-practices.md` |
+| **Testing** | pytest, Playwright | `testing-and-logging.md` |
+
+Customize the reference docs for your preferred stack.
+
+---
+
+## Adding Reference Documents
+
+The `.claude/reference/` directory contains best practices guides. Claude reads these when working on specific areas.
+
+To add your own:
+
+1. Create a markdown file in `.claude/reference/`
+2. Follow the existing format (table of contents, code examples, anti-patterns)
+3. Reference it in `CLAUDE.md`
+
+Example custom references:
+- `supabase-patterns.md` — Your Supabase integration patterns
+- `n8n-webhooks.md` — Automation trigger patterns
+- `kubernetes-deployment.md` — K8s deployment patterns
+
+---
+
+## Tips for Effective AI-Assisted Development
+
+### Do
+
+- ✅ **Be specific** in your PRD — vague requirements = vague code
+- ✅ **Review plans** before executing — catch issues early
+- ✅ **Validate frequently** — don't let bugs accumulate
+- ✅ **Keep CLAUDE.md updated** — it's Claude's memory
+- ✅ **Use reference docs** — they encode your patterns
+
+### Don't
+
+- ❌ **Skip the PRD** — you'll waste time on rework
+- ❌ **Execute without a plan** — leads to inconsistent code
+- ❌ **Ignore validation failures** — fix them immediately
+- ❌ **Let CLAUDE.md get stale** — outdated context = wrong code
+
+---
+
+## Customizing for Your Workflow
+
+### Different Tech Stack?
+
+1. Update reference docs in `.claude/reference/`
+2. Modify `CLAUDE.md` template sections
+3. Adjust `/init-project.md` for your setup commands
+
+### Different Branching Strategy?
+
+Modify `/commit.md` to match your workflow (GitFlow, trunk-based, etc.)
+
+### Different Testing Approach?
+
+Update `/validation:validate` command to run your test suite.
+
+---
+
+## Resources
+
+- [Claude Code Documentation](https://docs.anthropic.com/en/docs/claude-code)
+- [Context Engineering Guide](https://github.com/coleam00/context-engineering-intro)
+- [Cole Medin's YouTube](https://www.youtube.com/@ColeMedin) — Original workshop source
+
+---
+
+## Credits
+
+Based on [Cole Medin's AI Coding Workshop](https://github.com/coleam00/habit-tracker) template.
+
+Customized with Caddy, UV, and docker-compose patterns for self-hosted deployments.
