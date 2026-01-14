@@ -11,13 +11,14 @@ A concise reference guide for deploying Python/FastAPI + React applications.
 3. [Backend Deployment](#3-backend-deployment)
 4. [Frontend Deployment](#4-frontend-deployment)
 5. [Docker](#5-docker)
-6. [Reverse Proxy (Nginx)](#6-reverse-proxy-nginx)
-7. [Environment & Configuration](#7-environment--configuration)
-8. [Database in Production](#8-database-in-production)
-9. [Monitoring & Logging](#9-monitoring--logging)
-10. [Cloud Platforms](#10-cloud-platforms)
-11. [Security](#11-security)
-12. [Single Binary Deployment](#12-single-binary-deployment)
+6. [Reverse Proxy (Caddy)](#6-reverse-proxy-caddy)
+7. [Reverse Proxy (Nginx Alternative)](#7-reverse-proxy-nginx-alternative)
+8. [Environment & Configuration](#8-environment--configuration)
+9. [Database in Production](#9-database-in-production)
+10. [Monitoring & Logging](#10-monitoring--logging)
+11. [Cloud Platforms](#11-cloud-platforms)
+12. [Security](#12-security)
+13. [Single Binary Deployment](#13-single-binary-deployment)
 
 ---
 
@@ -30,10 +31,8 @@ A concise reference guide for deploying Python/FastAPI + React applications.
 ```bash
 # Terminal 1: Backend
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
 
 # Terminal 2: Frontend
 cd frontend
@@ -143,72 +142,45 @@ export default defineConfig({
 
 ## 3. Backend Deployment
 
-### Uvicorn (Recommended for Most Cases)
+### Uvicorn (Recommended)
 
 ```bash
 # Development
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Production (with multiple workers)
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 **Worker count**: Number of CPU cores for async workers.
 
-### Gunicorn + Uvicorn Workers
-
-```bash
-# Install
-pip install gunicorn uvicorn
-
-# Run
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
-```
-
-**Gunicorn config file:**
-
-```python
-# gunicorn.conf.py
-import multiprocessing
-
-bind = "0.0.0.0:8000"
-workers = multiprocessing.cpu_count()
-worker_class = "uvicorn.workers.UvicornWorker"
-timeout = 30
-keepalive = 5
-max_requests = 10000
-max_requests_jitter = 1000
-```
-
-```bash
-gunicorn app.main:app -c gunicorn.conf.py
-```
+> **Note**: Gunicorn + Uvicorn workers is a legacy pattern. Modern Uvicorn handles process management well on its own. Use plain Uvicorn unless you have specific requirements for Gunicorn's features.
 
 ### Systemd Service
 
 ```ini
-# /etc/systemd/system/habittracker.service
+# /etc/systemd/system/myapp.service
 [Unit]
-Description=Habit Tracker API
+Description=My FastAPI App
 After=network.target
 
 [Service]
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/habit-tracker/backend
-Environment="PATH=/var/www/habit-tracker/backend/.venv/bin"
-ExecStart=/var/www/habit-tracker/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+WorkingDirectory=/var/www/myapp/backend
+ExecStart=/home/www-data/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 Restart=always
 RestartSec=5
+Environment="PATH=/home/www-data/.local/bin:/usr/bin"
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable habittracker
-sudo systemctl start habittracker
-sudo systemctl status habittracker
+sudo systemctl enable myapp
+sudo systemctl start myapp
+sudo systemctl status myapp
 ```
 
 ---
@@ -251,26 +223,24 @@ app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
 
 **Benefits**: Single deployment, no CORS issues, simpler infrastructure.
 
-### Option 2: Nginx Serves Static Files
+### Option 2: Caddy Serves Static Files (Recommended)
 
-Better performance for static assets:
+Better performance for static assets, automatic HTTPS:
 
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-    root /var/www/habit-tracker/frontend/dist;
-
-    # Serve static files
-    location / {
-        try_files $uri $uri/ /index.html;
+```caddyfile
+app.example.com {
+    encode zstd gzip
+    
+    # API routes to FastAPI
+    handle /api/* {
+        reverse_proxy backend:8000
     }
-
-    # Proxy API to FastAPI
-    location /api {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+    
+    # Static files for frontend
+    handle {
+        root * /var/www/app/dist
+        try_files {path} /index.html
+        file_server
     }
 }
 ```
@@ -299,38 +269,49 @@ VITE_API_URL=https://api.yourdomain.com
 
 ## 5. Docker
 
-### Dockerfile (Multi-Stage Build)
+### Dockerfile (Multi-Stage Build with UV)
 
 ```dockerfile
 # backend/Dockerfile
-# Stage 1: Build
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
+
+# Install UV
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 
-# Stage 2: Runtime
-FROM python:3.11-slim
+# Install dependencies (no dev deps, no project yet)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Copy application code
+COPY . .
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
+
+# Runtime stage
+FROM python:3.12-slim
 
 WORKDIR /app
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy dependencies from builder
-COPY --from=builder /root/.local /home/appuser/.local
-ENV PATH=/home/appuser/.local/bin:$PATH
+# Copy venv from builder
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application
-COPY . .
+COPY --from=builder /app .
 
 # Set ownership
 RUN chown -R appuser:appuser /app
 
-# Switch to non-root user
+# Add venv to PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
 USER appuser
 
 EXPOSE 8000
@@ -338,7 +319,7 @@ EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-### Frontend Dockerfile
+### Frontend Dockerfile (with Caddy)
 
 ```dockerfile
 # frontend/Dockerfile
@@ -350,37 +331,81 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+FROM caddy:2-alpine
+COPY --from=builder /app/dist /var/www/app
+COPY Caddyfile /etc/caddy/Caddyfile
+EXPOSE 80 443
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
 ```
 
-### Docker Compose
+### Docker Compose (Full Stack with Caddy)
 
 ```yaml
 # docker-compose.yml
 version: '3.8'
 
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=sqlite:///./data/habits.db
-    volumes:
-      - ./data:/app/data  # Persist SQLite database
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
     restart: unless-stopped
-
-  frontend:
-    build: ./frontend
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend/dist:/var/www/app:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - backend
+    networks:
+      - app-network
+
+  backend:
+    build: ./backend
+    container_name: backend
     restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+    volumes:
+      - ./data:/app/data
+    networks:
+      - app-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app-network:
+```
+
+**Caddyfile:**
+
+```caddyfile
+{
+    email your@email.com
+}
+
+app.example.com {
+    encode zstd gzip
+    
+    # API to FastAPI backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    
+    # Frontend static files
+    handle {
+        root * /var/www/app
+        try_files {path} /index.html
+        file_server
+    }
+}
 ```
 
 ### Docker Commands
@@ -406,11 +431,11 @@ docker-compose up --build backend
 
 | Tip | Impact |
 |-----|--------|
-| Use slim base images | `python:3.11-slim` is 45MB vs 125MB |
+| Use slim base images | `python:3.12-slim` is 45MB vs 125MB |
 | Multi-stage builds | 70%+ smaller images |
 | Use `.dockerignore` | Faster builds |
 | Order layers by change frequency | Better caching |
-| Combine RUN commands | Fewer layers |
+| Use UV for faster installs | 10x faster than pip |
 
 **.dockerignore:**
 ```
@@ -422,22 +447,194 @@ __pycache__
 node_modules
 dist
 *.md
+.ruff_cache
+.pytest_cache
 ```
 
 ---
 
-## 6. Reverse Proxy (Nginx)
+## 6. Reverse Proxy (Caddy)
+
+> **Recommended**: Caddy is the preferred reverse proxy for its simplicity, automatic HTTPS, and Docker-native design.
+
+### Why Caddy?
+
+| Feature | Caddy | Nginx |
+|---------|-------|-------|
+| Auto HTTPS | ✅ Built-in Let's Encrypt | ❌ Requires Certbot |
+| Config syntax | Simple, 2-3 lines | Complex, 10+ lines |
+| Hot reload | ✅ Automatic | Manual `nginx -s reload` |
+| WebSocket | ✅ Automatic | Manual configuration |
+| Docker service names | ✅ Just work | Requires resolver |
+
+### Basic Configuration
+
+```caddyfile
+{
+    email your@email.com
+}
+
+app.example.com {
+    encode zstd gzip
+    reverse_proxy backend:8000
+}
+```
+
+### Full Stack (API + Frontend)
+
+```caddyfile
+app.example.com {
+    encode zstd gzip
+    
+    # API routes
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    
+    # Frontend SPA
+    handle {
+        root * /var/www/app
+        try_files {path} /index.html
+        file_server
+    }
+}
+```
+
+### With Basic Auth (Swagger Protection)
+
+```caddyfile
+api.example.com {
+    encode zstd gzip
+    
+    # Protect Swagger UI only
+    @swagger path /docs* /redoc* /openapi.json
+    route @swagger {
+        basic_auth {
+            admin $2a$14$hashedpassword
+        }
+        reverse_proxy backend:8000
+    }
+    
+    # No auth for API endpoints
+    reverse_proxy backend:8000
+}
+```
+
+Generate password hash:
+```bash
+docker run --rm caddy:2-alpine caddy hash-password
+```
+
+### With Environment Variables
+
+```caddyfile
+{$APP_HOSTNAME} {
+    reverse_proxy backend:8000
+}
+```
+
+```yaml
+# docker-compose.yml
+services:
+  caddy:
+    environment:
+      - APP_HOSTNAME=app.example.com
+```
+
+### Multiple Services
+
+```caddyfile
+{
+    email your@email.com
+}
+
+app.example.com {
+    reverse_proxy frontend:3000
+}
+
+api.example.com {
+    reverse_proxy backend:8000
+}
+
+n8n.example.com {
+    reverse_proxy n8n:5678
+}
+```
+
+### CORS Handling
+
+```caddyfile
+api.example.com {
+    # Handle preflight
+    @preflight method OPTIONS
+    handle @preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization"
+        respond "" 204
+    }
+    
+    header Access-Control-Allow-Origin "*"
+    reverse_proxy backend:8000
+}
+```
+
+### Shared Network Pattern
+
+For Caddy to reach containers in other docker-compose stacks:
+
+```bash
+# Create shared network once
+docker network create caddy-shared
+```
+
+```yaml
+# In each docker-compose.yml
+services:
+  myservice:
+    networks:
+      - default
+      - caddy-shared
+
+networks:
+  caddy-shared:
+    external: true
+```
+
+### Caddy Commands
+
+```bash
+# Validate config
+docker exec caddy caddy validate --config /etc/caddy/Caddyfile
+
+# Reload without restart
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+
+# View certificates
+docker exec caddy caddy list-certs
+
+# Format Caddyfile
+docker exec caddy caddy fmt --overwrite /etc/caddy/Caddyfile
+```
+
+> **See also**: `.claude/reference/caddy-patterns.md` for comprehensive Caddy patterns including WebSocket, Kubernetes integration, and Cloudflare setup.
+
+---
+
+## 7. Reverse Proxy (Nginx Alternative)
+
+> **Note**: Use Nginx if you have existing Nginx infrastructure or specific requirements. For new projects, prefer Caddy.
 
 ### Basic Configuration
 
 ```nginx
-# /etc/nginx/sites-available/habittracker
+# /etc/nginx/sites-available/myapp
 server {
     listen 80;
-    server_name yourdomain.com;
+    server_name app.example.com;
 
     # Serve React static files
-    root /var/www/habit-tracker/frontend/dist;
+    root /var/www/myapp/frontend/dist;
     index index.html;
 
     # Handle React Router (client-side routing)
@@ -466,54 +663,36 @@ server {
 ### Enable Site
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/habittracker /etc/nginx/sites-enabled/
-sudo nginx -t  # Test configuration
+sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
+sudo nginx -t
 sudo systemctl reload nginx
 ```
 
 ### SSL with Let's Encrypt
 
 ```bash
-# Install Certbot
 sudo apt install certbot python3-certbot-nginx
-
-# Obtain certificate
-sudo certbot --nginx -d yourdomain.com
-
-# Auto-renewal (already configured by certbot)
-sudo certbot renew --dry-run
+sudo certbot --nginx -d app.example.com
 ```
 
-**Result** (auto-generated by certbot):
+### Nginx in Docker
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-
-    # ... rest of config
-}
-
-server {
-    listen 80;
-    server_name yourdomain.com;
-    return 301 https://$host$request_uri;
-}
+```dockerfile
+FROM nginx:alpine
+COPY dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 ```
 
 ---
 
-## 7. Environment & Configuration
+## 8. Environment & Configuration
 
 ### 12-Factor App Principles
 
 | Factor | Application |
 |--------|-------------|
 | Config | Environment variables |
-| Dependencies | requirements.txt / package.json |
+| Dependencies | pyproject.toml / package.json |
 | Processes | Stateless app |
 | Port binding | App binds to port |
 | Logs | Stream to stdout |
@@ -527,8 +706,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    app_name: str = "Habit Tracker"
-    database_url: str = "sqlite:///./habits.db"
+    app_name: str = "My App"
+    database_url: str = "sqlite:///./app.db"
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:5173"]
 
@@ -546,14 +725,14 @@ def get_settings() -> Settings:
 
 ```bash
 # .env.development
-DATABASE_URL=sqlite:///./habits.db
+DATABASE_URL=sqlite:///./app.db
 DEBUG=true
 CORS_ORIGINS=["http://localhost:5173"]
 
 # .env.production
-DATABASE_URL=sqlite:///./data/habits.db
+DATABASE_URL=sqlite:///./data/app.db
 DEBUG=false
-CORS_ORIGINS=["https://yourdomain.com"]
+CORS_ORIGINS=["https://app.example.com"]
 ```
 
 ### Secrets Management (Production)
@@ -567,7 +746,7 @@ CORS_ORIGINS=["https://yourdomain.com"]
 
 ---
 
-## 8. Database in Production
+## 9. Database in Production
 
 ### SQLite Considerations
 
@@ -587,16 +766,15 @@ CORS_ORIGINS=["https://yourdomain.com"]
 ```python
 # Don't store in application directory
 # BAD
-DATABASE_URL = "sqlite:///./habits.db"
+DATABASE_URL = "sqlite:///./app.db"
 
 # GOOD - absolute path outside app
-DATABASE_URL = "sqlite:////var/data/habit-tracker/habits.db"
+DATABASE_URL = "sqlite:////var/data/myapp/app.db"
 ```
 
 ### Docker Volume for Persistence
 
 ```yaml
-# docker-compose.yml
 services:
   backend:
     volumes:
@@ -611,81 +789,69 @@ volumes:
 ```yaml
 # litestream.yml
 dbs:
-  - path: /data/habits.db
+  - path: /data/app.db
     replicas:
-      - url: s3://bucket-name/habits
+      - url: s3://bucket-name/backups
         sync-interval: 1s
         retention: 24h
-```
-
-```bash
-# Run with litestream
-litestream replicate -config litestream.yml
 ```
 
 ### Manual Backup
 
 ```bash
 # Safe backup using SQLite CLI
-sqlite3 /data/habits.db "VACUUM INTO '/backups/habits-$(date +%Y%m%d).db'"
-
-# Or using Python
-python -c "import sqlite3; src=sqlite3.connect('/data/habits.db'); dst=sqlite3.connect('/backups/backup.db'); src.backup(dst)"
+sqlite3 /data/app.db "VACUUM INTO '/backups/app-$(date +%Y%m%d).db'"
 ```
 
 ### Migrations with Alembic
 
 ```bash
+# Add alembic
+uv add alembic
+
+# Initialize
+uv run alembic init migrations
+
 # Generate migration
-alembic revision --autogenerate -m "Add description column"
+uv run alembic revision --autogenerate -m "Add users table"
 
 # Apply migrations
-alembic upgrade head
-
-# Rollback
-alembic downgrade -1
+uv run alembic upgrade head
 ```
-
-**Production deployment:**
-1. Create backup
-2. Run migrations: `alembic upgrade head`
-3. Start application
-4. Verify health checks
 
 ---
 
-## 9. Monitoring & Logging
+## 10. Monitoring & Logging
 
-### Structured Logging
+### Structured Logging with structlog
 
 ```python
-import logging
-import json
+import structlog
 
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_data = {
-            "timestamp": self.formatTime(record),
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "module": record.module,
-        }
-        return json.dumps(log_data)
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-handler = logging.StreamHandler()
-handler.setFormatter(JSONFormatter())
-logger.addHandler(handler)
+logger = structlog.get_logger()
+logger.info("Request processed", path="/api/habits", duration=0.045)
 ```
 
 ### Request Logging Middleware
 
 ```python
 import time
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 @app.middleware("http")
 async def log_requests(request, call_next):
@@ -694,9 +860,11 @@ async def log_requests(request, call_next):
     duration = time.time() - start_time
 
     logger.info(
-        f"{request.method} {request.url.path} "
-        f"status={response.status_code} "
-        f"duration={duration:.3f}s"
+        "Request completed",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration=f"{duration:.3f}s",
     )
     return response
 ```
@@ -723,54 +891,59 @@ async def readiness_check(db: Session = Depends(get_db)):
         )
 ```
 
-### Monitoring Stack (Optional)
-
-| Tool | Purpose |
-|------|---------|
-| Prometheus | Metrics collection |
-| Grafana | Visualization |
-| Sentry | Error tracking |
-| Loki | Log aggregation |
-
 ---
 
-## 10. Cloud Platforms
+## 11. Cloud Platforms
 
 ### Platform Comparison
 
 | Platform | Pricing | Best For | SQLite Support |
 |----------|---------|----------|----------------|
-| **Railway** | Usage-based | Fast deploys | Limited |
-| **Render** | $7+/mo | Managed services | Limited |
+| **Hostinger VPS** | $5+/mo | Docker/Caddy stacks | Yes |
 | **Fly.io** | $2+/mo | Global, SQLite | Yes (volumes) |
+| **Railway** | Usage-based | Fast deploys | Limited |
 | **DigitalOcean** | $4+/mo | VPS control | Yes |
 | **Hetzner** | $4+/mo | Europe, budget | Yes |
+
+### VPS Deployment (Hostinger/DigitalOcean)
+
+```bash
+# 1. SSH into server
+ssh user@your-server
+
+# 2. Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# 3. Clone repository
+git clone https://github.com/you/myapp /opt/myapp
+
+# 4. Configure environment
+cd /opt/myapp
+cp .env.example .env
+nano .env
+
+# 5. Create shared network
+docker network create caddy-shared
+
+# 6. Start services
+docker-compose up -d
+
+# 7. Check logs
+docker-compose logs -f
+```
 
 ### Fly.io Deployment
 
 ```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-# Login
-fly auth login
-
-# Launch app
 fly launch
-
-# Deploy
-fly deploy
-
-# Create volume for SQLite
 fly volumes create data --size 1
-
-# Check status
-fly status
+fly deploy
 ```
 
 **fly.toml:**
 ```toml
-app = "habit-tracker"
+app = "myapp"
 
 [build]
   dockerfile = "Dockerfile"
@@ -784,67 +957,11 @@ app = "habit-tracker"
   destination = "/data"
 ```
 
-### Railway Deployment
-
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login
-railway login
-
-# Initialize
-railway init
-
-# Deploy
-railway up
-```
-
-### VPS Deployment Checklist
-
-1. **Server setup**
-   ```bash
-   sudo apt update && sudo apt upgrade
-   sudo apt install nginx python3-pip python3-venv
-   ```
-
-2. **Clone repository**
-   ```bash
-   git clone https://github.com/user/habit-tracker /var/www/habit-tracker
-   ```
-
-3. **Setup backend**
-   ```bash
-   cd /var/www/habit-tracker/backend
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-4. **Build frontend**
-   ```bash
-   cd /var/www/habit-tracker/frontend
-   npm install && npm run build
-   ```
-
-5. **Configure systemd service**
-
-6. **Configure Nginx**
-
-7. **Setup SSL with Certbot**
-
-8. **Configure firewall**
-   ```bash
-   sudo ufw allow 80
-   sudo ufw allow 443
-   sudo ufw enable
-   ```
-
 ---
 
-## 11. Security
+## 12. Security
 
-### CORS Configuration
+### CORS Configuration (FastAPI)
 
 ```python
 from fastapi.middleware.cors import CORSMiddleware
@@ -858,15 +975,19 @@ app.add_middleware(
 )
 ```
 
-### Security Headers (Nginx)
+### Security Headers (Caddy)
 
-```nginx
-# Add to server block
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header X-XSS-Protection "1; mode=block" always;
-add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
+```caddyfile
+app.example.com {
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+    reverse_proxy backend:8000
+}
 ```
 
 ### Docker Security
@@ -877,20 +998,10 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 USER appuser
 
 # Use specific versions
-FROM python:3.11.7-slim
+FROM python:3.12.3-slim
 
 # Don't store secrets in image
 # Use runtime environment variables
-```
-
-### HTTPS Everywhere
-
-- Use Let's Encrypt for free SSL certificates
-- Redirect HTTP to HTTPS
-- Enable HSTS
-
-```nginx
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 ```
 
 ### Environment Security
@@ -906,15 +1017,15 @@ chmod 600 .env
 
 ---
 
-## 12. Single Binary Deployment
+## 13. Single Binary Deployment
 
 ### PyInstaller
 
 ```bash
-pip install pyinstaller
+uv add pyinstaller
 
 # Create spec file
-pyi-makespec --onefile --name habittracker backend/app/main.py
+uv run pyi-makespec --onefile --name myapp backend/app/main.py
 ```
 
 **entrypoint.py:**
@@ -923,34 +1034,14 @@ import multiprocessing
 import uvicorn
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()  # Required for Windows
+    multiprocessing.freeze_support()
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
 ```
 
 **Build:**
 ```bash
-pyinstaller --onefile --add-data "frontend/dist:frontend/dist" entrypoint.py
+uv run pyinstaller --onefile --add-data "frontend/dist:frontend/dist" entrypoint.py
 ```
-
-### Tauri (Desktop App)
-
-For a native desktop wrapper:
-
-```bash
-# Install Tauri CLI
-cargo install tauri-cli
-
-# Initialize
-cargo tauri init
-
-# Build
-cargo tauri build
-```
-
-**Benefits**:
-- Native WebView (not bundled browser)
-- Small binary (~10-50MB)
-- Cross-platform
 
 ---
 
@@ -965,31 +1056,18 @@ cargo tauri build
 └─────────────────────────────────┘
 ```
 
-**Commands:**
 ```bash
-cd backend && uvicorn app.main:app --port 8000
-# Access at http://localhost:8000
+cd backend && uv run uvicorn app.main:app --port 8000
 ```
 
-### Scenario 2: Self-Hosted VPS
-
-```
-┌──────────┐      ┌──────────┐      ┌──────────┐
-│  Nginx   │──────│  FastAPI │──────│  SQLite  │
-│  (SSL)   │      │ (systemd)│      │  (file)  │
-└──────────┘      └──────────┘      └──────────┘
-```
-
-**Cost**: ~$4-5/month
-
-### Scenario 3: Docker Compose
+### Scenario 2: VPS with Docker Compose + Caddy (Recommended)
 
 ```
 ┌──────────────────────────────────────────┐
 │  docker-compose                          │
 │  ┌────────────┐    ┌────────────┐        │
-│  │  frontend  │    │  backend   │        │
-│  │  (nginx)   │────│  (uvicorn) │        │
+│  │   Caddy    │────│  FastAPI   │        │
+│  │  (HTTPS)   │    │  (uvicorn) │        │
 │  └────────────┘    └─────┬──────┘        │
 │                          │               │
 │                    ┌─────▼──────┐        │
@@ -999,7 +1077,9 @@ cd backend && uvicorn app.main:app --port 8000
 └──────────────────────────────────────────┘
 ```
 
-### Scenario 4: Cloud PaaS (Fly.io)
+**Cost**: ~$5/month (Hostinger VPS)
+
+### Scenario 3: Cloud PaaS (Fly.io)
 
 ```
 ┌──────────────────────────────────────────┐
@@ -1026,23 +1106,20 @@ cd backend && uvicorn app.main:app --port 8000
 
 ```bash
 # Development
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 npm run dev
 
 # Production build
 npm run build
-pip install -r requirements.txt
+uv sync --no-dev
 
 # Docker
 docker-compose up --build
 docker-compose logs -f
 
-# Deployment
-fly deploy
-railway up
-
-# SSL
-sudo certbot --nginx -d yourdomain.com
+# Caddy
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+docker exec caddy caddy validate --config /etc/caddy/Caddyfile
 
 # Database backup
 sqlite3 db.db "VACUUM INTO 'backup.db'"
@@ -1054,8 +1131,8 @@ sqlite3 db.db "VACUUM INTO 'backup.db'"
 |---------|--------------|
 | Vite dev server | 5173 |
 | FastAPI/Uvicorn | 8000 |
-| Nginx HTTP | 80 |
-| Nginx HTTPS | 443 |
+| Caddy HTTP | 80 |
+| Caddy HTTPS | 443 |
 | PostgreSQL | 5432 |
 
 ---
@@ -1063,9 +1140,8 @@ sqlite3 db.db "VACUUM INTO 'backup.db'"
 ## Resources
 
 - [FastAPI Deployment](https://fastapi.tiangolo.com/deployment/)
-- [Vite Static Deploy](https://vitejs.dev/guide/static-deploy.html)
+- [Caddy Documentation](https://caddyserver.com/docs/)
+- [UV Documentation](https://docs.astral.sh/uv/)
 - [Docker Documentation](https://docs.docker.com/)
-- [Nginx Documentation](https://nginx.org/en/docs/)
-- [Let's Encrypt](https://letsencrypt.org/)
-- [Fly.io Documentation](https://fly.io/docs/)
+- [Vite Static Deploy](https://vitejs.dev/guide/static-deploy.html)
 - [Litestream](https://litestream.io/)
