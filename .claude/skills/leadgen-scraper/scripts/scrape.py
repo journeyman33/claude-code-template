@@ -4,11 +4,13 @@
 # dependencies = [
 #     "httpx>=0.28.1",
 #     "python-dotenv>=1.2.1",
+#     "scrapling[fetchers]>=0.4.2",
 # ]
 # ///
 # =============================================================
-# scrape.py — B2C scraper using Firecrawl API
-# Sources: Gumtree (buyer-intent ads), HelloPeter (competitor complaints)
+# scrape.py — B2C scraper
+# Gumtree: Scrapling/curl_cffi (bypasses bot detection, extracts phone from DOM)
+# HelloPeter: Firecrawl API (JS-rendered review pages)
 # =============================================================
 # Usage:
 #   uv run scripts/scrape.py gumtree
@@ -58,34 +60,29 @@ def setup_logging(log_dir: Path, source: str) -> None:
 
 # ── Constants ────────────────────────────────────────────────
 
-# NOTE: Gumtree removed the "Wanted Ads" top-level category (c9110) in 2025/2026.
-# All /s-wanted-ads/... paths now 301-redirect to /s-all-the-ads/v1b0p1 (losing the keyword).
-# Use buyer-intent keyword phrases (?q=) to surface people looking to BUY a tracker.
+# NOTE: Gumtree /s-wanted-ads/ category was removed in 2025/2026 — redirects to /s-all-the-ads/.
+# NOTE: Search results are JS-rendered but URLs appear in JSON-LD ItemList embedded in the page HTML.
+# Strategy: keyword search, extract URLs from JSON-LD, fetch individual ad pages.
+# Car listings often include seller phone + mention of tracker need → good identity-first leads.
 SEARCH_URLS = [
-    # Direct buyer-intent queries
+    # Car listings mentioning tracker (seller has phone, may need tracker transfer/new one)
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=need+car+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=want+car+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+tracker+wanted",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=looking+for+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=gps+tracker+needed",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+tracker+wanted",
-    # Theft/crime-related — people who just experienced theft are hot tracker prospects
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+stolen+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+stolen+need+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=hijacked+car+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+break+in+tracker",
-    # Vehicle security / anti-theft — adjacent intent
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+security+tracking",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+theft+prevention+tracker",
-    # Installation / service requests — people seeking tracker installation
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+installation+wanted",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=install+car+tracker",
-    # Insurance / finance requirement — forced buyers (Tier 1)
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+required+insurance",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=insurance+tracker+needed",
-    # Competitor switching (Tier 2 churn)
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=insurance+requires+tracker",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=no+tracker+installed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+installation+needed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=need+tracker+installed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=gps+tracker+needed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+tracker+needed",
+    # Broader — cars for sale where tracker is mentioned (phone in listing)
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+tracker+contact",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+system+for+sale",
+    # Immobiliser interest (adjacent high-intent security buyers)
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=immobiliser+needed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=immobiliser+install+wanted",
+    # Competitor churn
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+cartrack",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+tracker+contract",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cartrack+contract+cancel",
 ]
 
 # HelloPeter — competitor complaint scraping (Tier 1 + Tier 2 signal)
@@ -98,14 +95,30 @@ HELLOPETER_TARGETS = [
 ]
 HELLOPETER_BASE = "https://www.hellopeter.com"
 
-# Gumtree URL path segments that NEVER contain tracker buyer-intent ads.
+# Gumtree URL path segments that NEVER contain useful leads.
+# NOTE: /a-cars-bakkies/ is NOT blocked — car listings include seller phone + name,
+# and descriptions often mention tracker needs (insurance requirement, no tracker installed).
 _BLOCKED_CATEGORIES = [
-    "/a-cars-bakkies/",
     "/a-heavy-trucks-buses/",
     "/a-other-pets/",
     "/a-removals-storage/",
     "/a-property-",
     "/a-wearable-technology/",
+    # Electronics / car accessories: seller ads only (businesses selling GPS units)
+    "/a-electronics-it-services/",
+    "/a-other-replacement-car-part/",
+    "/a-car-interior-accessories/",
+    "/a-accessories-styling/",
+    "/a-auto-electrical-parts/",
+    "/a-car-exterior-accessories/",
+    "/a-auto-electrical/",
+    "/a-cleaning-services/",
+    "/a-car-parks-storage/",
+    "/a-courses-training/",
+    "/a-office-space-",
+    "/a-industrial-properties-",
+    "/a-solar-",
+    "/a-recruitment-",
 ]
 
 # Gumtree-owned numbers injected site-wide (not seller phones)
@@ -144,21 +157,43 @@ def extract_phone(text: str | None) -> str | None:
     return number
 
 
-def extract_ad_links(links: list[str]) -> list[str]:
+def extract_ad_links_from_jsonld(body_text: str) -> list[str]:
     """
-    Filter a list of URLs to individual Gumtree ad links.
-    Accept:  URLs with /a- pattern
-    Reject:  blocked categories, job ads, user pages
+    Extract ad URLs from JSON-LD ItemList embedded in Gumtree search page HTML.
+    Gumtree renders search results in a schema.org ItemList block — more reliable
+    than parsing <a> tags (which only contain featured/boosted ads).
     """
+    import json as _json
+    urls = []
+    for m in re.finditer(
+        r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+        body_text,
+        re.DOTALL,
+    ):
+        try:
+            data = _json.loads(m.group(1))
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") == "ItemList":
+                    for elem in item.get("itemListElement", []):
+                        url = elem.get("url", "")
+                        if url:
+                            urls.append(url)
+        except Exception:
+            pass
+    return urls
+
+
+def _filter_ad_links(urls: list[str]) -> list[str]:
+    """Filter a list of Gumtree ad URLs: strip query params, dedupe, apply blocklist."""
     seen = set()
     result = []
-    for href in links:
+    for href in urls:
         if not href:
             continue
-        # Normalise to absolute URL
         if href.startswith("/"):
             href = GUMTREE_BASE + href
-        href = href.split("?")[0]  # strip query params
+        href = href.split("?")[0]
         if "/a-" not in href:
             continue
         if "/s-user/" in href or "/s-my-gumtree/" in href:
@@ -193,6 +228,172 @@ def extract_adid(url: str) -> str | None:
     if parts and re.match(r"^\d+$", parts[-1]):
         return parts[-1]
     return None
+
+
+BLOCK_SIGNALS = ["The request is blocked", "Access Denied", "cf-challenge"]
+# NOTE: "Someone beat you to it" is NOT in BLOCK_SIGNALS — Gumtree embeds this overlay HTML
+# on every ad page as a hidden modal. It's only a real block if the body is < 5000 bytes
+# (i.e., the overlay IS the entire page with no ad content behind it).
+
+
+def _extract_location_from_jsonld(body_text: str) -> str | None:
+    """Parse JSON-LD Place schema embedded in Gumtree page HTML."""
+    import json as _json
+    for m in re.finditer(
+        r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+        body_text,
+        re.DOTALL,
+    ):
+        try:
+            data = _json.loads(m.group(1))
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") == "Place":
+                    addr = item.get("address", {})
+                    locality = addr.get("addressLocality", "")
+                    region = addr.get("addressRegion", "")
+                    parts = [p for p in [locality, region] if p and p.lower() != "other"]
+                    if parts:
+                        return ", ".join(parts)
+        except Exception:
+            pass
+    return None
+
+
+def is_blocked_page(body_text: str) -> bool:
+    if len(body_text) < 500:
+        return True
+    if any(sig in body_text for sig in BLOCK_SIGNALS):
+        return True
+    # "Someone beat you to it" is only a real block when it IS the whole page (no real ad content)
+    if "Someone beat you to it" in body_text and len(body_text) < 5000:
+        return True
+    return False
+
+
+def parse_ad_page_scrapling(page, url: str) -> dict | None:
+    """Extract lead fields from a Gumtree ad page using Scrapling CSS selectors."""
+    try:
+        body_text = page.body.decode("utf-8", errors="ignore") if isinstance(page.body, bytes) else str(page.body)
+    except Exception:
+        body_text = ""
+
+    if is_blocked_page(body_text):
+        log.debug("Block page detected: %s", url)
+        return None
+
+    # Title
+    title = page.css("h1::text").get()
+    if title:
+        title = title.strip()
+
+    # Description — try multiple selectors (car listings use .description-content)
+    description = None
+    for sel in [
+        ".description-content::text",
+        ".description-content *::text",
+        '[data-q="ad-description"] *::text',
+        ".description *::text",
+        ".vip-ad-description *::text",
+        ".ad-description *::text",
+        "#revip-description .description-container *::text",
+    ]:
+        parts = page.css(sel).getall()
+        if parts:
+            description = " ".join(t.strip() for t in parts if t.strip())
+            if description and len(description) > 20:
+                break
+    if not description:
+        description = page.css('meta[name="description"]::attr(content)').get()
+        if description:
+            description = description.strip()
+
+    # Poster name — shown in listing header on Gumtree
+    poster_name = None
+    for sel in [
+        '[data-q="seller-name"]::text',
+        ".seller-name::text",
+        ".seller-details .name::text",
+        '[data-q="advertiser-name"]::text',
+    ]:
+        name_val = page.css(sel).get()
+        if name_val and name_val.strip():
+            poster_name = name_val.strip()
+            break
+    # Fallback: look for "Ad posted by <Name>" pattern in body
+    if not poster_name:
+        m = re.search(r"(?i)(?:ad\s+)?posted\s+by\s*[:\-]?\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)", body_text)
+        if m:
+            poster_name = m.group(1).strip()
+
+    # Location — JSON-LD is most reliable
+    location = _extract_location_from_jsonld(body_text)
+    if not location:
+        for sel in ['[data-q="ad-location"]::text', ".location::text"]:
+            loc = page.css(sel).get()
+            if loc and loc.strip() and loc.strip() != ",":
+                location = loc.strip()
+                break
+
+    # Price
+    price = None
+    for sel in ['[data-q="ad-price"]::text', ".price::text"]:
+        p = page.css(sel).get()
+        if p and p.strip():
+            price = p.strip()
+            break
+
+    # Phone — priority: tel: links → data-phone attr → regex in description → body scan
+    # Body scan is limited to 100KB and skips matches inside data-adid= (false positives).
+    phone = None
+    for tel_href in page.css('a[href^="tel:"]::attr(href)').getall():
+        candidate = re.sub(r"[\s\-]", "", tel_href.replace("tel:", "").strip())
+        if candidate not in _GUMTREE_NUMBERS:
+            phone = candidate
+            if phone.startswith("0"):
+                phone = "+27" + phone[1:]
+            elif phone.startswith("27") and not phone.startswith("+"):
+                phone = "+" + phone
+            break
+    if not phone:
+        data_phone = page.css("[data-phone]::attr(data-phone)").get()
+        if data_phone:
+            phone = re.sub(r"[\s\-]", "", data_phone.strip())
+    if not phone:
+        phone = extract_phone(description)
+    if not phone and body_text:
+        # Scan main ad content only (stop at 100KB to avoid related-ads sidebar adid false positives)
+        body_section = body_text[5000:100000]
+        for phone_match in PHONE_RE.finditer(body_section):
+            start = phone_match.start()
+            context_before = body_section[max(0, start - 20):start]
+            # Skip if inside a data-adid attribute (digits from adid look like phone numbers)
+            if 'data-adid="' in context_before or 'adid=' in context_before.lower():
+                continue
+            phone = extract_phone(phone_match.group(0))
+            if phone:
+                break
+
+    # Filter Gumtree's own numbers
+    if phone in _GUMTREE_NUMBERS:
+        phone = None
+
+    adid = extract_adid(url)
+
+    return {
+        "title": title,
+        "description": description,
+        "phone": phone,
+        "location": location,
+        "price": price,
+        "adid": adid,
+        "url": url,
+        "source": "Gumtree",
+        "competitor": None,
+        "pain_point": None,
+        "name": poster_name,
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def parse_ad_markdown(markdown: str, url: str) -> dict:
@@ -495,21 +696,50 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_gumtree(args: argparse.Namespace, client: httpx.Client) -> list[dict]:
-    """Phase 1+2: collect Gumtree buyer-intent ad leads."""
+def run_gumtree(args: argparse.Namespace, _client: httpx.Client) -> list[dict]:
+    """Scrapling-based Gumtree scraper (curl_cffi, bypasses bot detection).
+    Phase 1: collect ad links from search pages.
+    Phase 2: fetch each ad page, extract phone + name from DOM.
+    Identity-first: logs phone hit rate for monitoring.
+    """
+    try:
+        from scrapling.fetchers import Fetcher
+    except ImportError:
+        log.error("scrapling not installed — run: uv add 'scrapling[fetchers]>=0.4.2'")
+        return []
+
+    import random
+
     results: list[dict] = []
     seen_adids: set[str] = set()
-    all_ad_urls: list[str] = []
     seen_urls: set[str] = set()
+    all_ad_urls: list[str] = []
 
-    # Phase 1: collect ad links from all search pages
+    # Phase 1: collect ad links from search pages
     for search_url in SEARCH_URLS:
-        if len(seen_urls) >= args.max_ads * 3:
+        if len(all_ad_urls) >= args.max_ads * 4:
             break
         log.info("Fetching listing: %s", search_url)
-        links = firecrawl_scrape_links(search_url, client)
-        ad_links = extract_ad_links(links)
-        log.info("Found %d ad links from listing", len(ad_links))
+        try:
+            listing_page = Fetcher.get(search_url, stealthy_headers=True, retries=3, timeout=30)
+        except Exception as e:
+            log.warning("Listing fetch failed: %s", e)
+            continue
+
+        try:
+            body_text = listing_page.body.decode("utf-8", errors="ignore") if isinstance(listing_page.body, bytes) else str(listing_page.body)
+        except Exception:
+            body_text = ""
+
+        if is_blocked_page(body_text):
+            log.warning("Blocked on listing page: %s", search_url)
+            continue
+
+        # Extract ad URLs from JSON-LD ItemList (search results are embedded there, not in <a> tags)
+        jsonld_urls = extract_ad_links_from_jsonld(body_text)
+        ad_links = _filter_ad_links(jsonld_urls)
+        log.info("Found %d ad links from listing (JSON-LD)", len(ad_links))
+
         for link in ad_links:
             adid = extract_adid(link)
             if adid and adid in seen_adids:
@@ -524,32 +754,39 @@ def run_gumtree(args: argparse.Namespace, client: httpx.Client) -> list[dict]:
         log.warning("No Gumtree ad links collected")
         return []
 
-    ad_urls_to_scrape = all_ad_urls[:args.max_ads]
-    log.info("Batch-scraping %d Gumtree ad pages", len(ad_urls_to_scrape))
+    to_fetch = all_ad_urls[:args.max_ads]
+    log.info("Fetching %d Gumtree ad pages via Scrapling", len(to_fetch))
 
-    # Phase 2: batch-scrape ad pages
-    batch_results = firecrawl_batch_scrape(ad_urls_to_scrape, client)
-    log.info("Batch returned %d results", len(batch_results))
+    # Phase 2: fetch each ad page individually with polite delay
+    phones_found = 0
+    for ad_url in to_fetch:
+        time.sleep(0.5 + random.random() * 0.7)
+        log.debug("Fetching ad: %s", ad_url)
+        try:
+            ad_page = Fetcher.get(ad_url, stealthy_headers=True, retries=3, timeout=30)
+        except Exception as e:
+            log.warning("Ad fetch failed for %s: %s", ad_url, e)
+            continue
 
-    for item in batch_results:
-        metadata = item.get("metadata", {})
-        source_url = metadata.get("sourceURL") or metadata.get("url") or ""
-        markdown = item.get("markdown", "")
-        if not markdown:
-            log.debug("Empty markdown for %s — skipping", source_url)
+        lead = parse_ad_page_scrapling(ad_page, ad_url)
+        if not lead:
             continue
-        lead = parse_ad_markdown(markdown, source_url)
-        if lead.get("adid") and lead["adid"] in seen_adids and source_url not in ad_urls_to_scrape:
-            log.debug("Duplicate adid %s — skipping", lead["adid"])
-            continue
+
+        if lead.get("phone"):
+            phones_found += 1
+
         results.append(lead)
         log.info(
-            '✓ "%s" | phone: %s | loc: %s',
-            (lead.get("title") or "?")[:60],
+            '✓ "%s" | phone: %s | name: %s | loc: %s',
+            (lead.get("title") or "?")[:55],
             lead.get("phone") or "none",
+            lead.get("name") or "?",
             lead.get("location") or "?",
         )
 
+    log.info("Gumtree done — %d leads, %d with phone (%.0f%%)",
+             len(results), phones_found,
+             100 * phones_found / len(results) if results else 0)
     return results
 
 

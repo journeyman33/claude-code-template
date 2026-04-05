@@ -76,8 +76,7 @@ COMPETITOR_NAMES = ["cartrack", "tracker connect", "tracker", "netstar", "mix te
 # ── Pre-filter signal lists — copied verbatim from gumtree_to_b2c.py ─
 
 SELLER_SIGNALS = [
-    "for sale", "selling", "we are selling", "price:", "only r",
-    "includes sim", "no subscription", "subscription-free",
+    "we are selling", "includes sim", "no subscription", "subscription-free",
     "order now", "shop now", "visit our", "our range",
     "in stock", "available now", "special offer",
     "we deliver", "nationwide delivery", "free delivery",
@@ -108,7 +107,7 @@ IRRELEVANT_SIGNALS = [
 ]
 
 BLOCKED_URL_SEGMENTS = [
-    "/a-cars-bakkies/", "/a-heavy-trucks-buses/",
+    "/a-heavy-trucks-buses/",
     "/a-other-replacement-car-part/", "/a-car-interior-accessories/",
     "/a-accessories-styling/", "/a-auto-electrical-parts/",
     "/a-electronics-it-services/", "/a-wearable-technology/",
@@ -280,6 +279,18 @@ def pre_filter(ad: dict) -> str | None:
     for signal in IRRELEVANT_SIGNALS:
         if signal in text:
             return f"irrelevant signal: '{signal}'"
+
+    # ── IDENTITY GATE — no LLM call for anonymous leads ──────────
+    # We need Full Name OR Phone Number before spending tokens.
+    # Phone: extracted by scraper from DOM/text.
+    # Name: either reviewer_name (HelloPeter) or poster name from Gumtree DOM.
+    # Exa/Tavily results are always anonymous — rejected here.
+    phone = ad.get("phone")
+    name = ad.get("name") or ad.get("reviewer_name") or ""
+    has_phone = bool(phone)
+    has_name = bool(name and name.lower() not in ("unknown", "") and len(name.split()) >= 2)
+    if not has_phone and not has_name:
+        return "no identity: no phone or full name"
 
     return None
 
