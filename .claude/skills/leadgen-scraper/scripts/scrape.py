@@ -65,7 +65,7 @@ def setup_logging(log_dir: Path, source: str) -> None:
 # Strategy: keyword search, extract URLs from JSON-LD, fetch individual ad pages.
 # Car listings often include seller phone + mention of tracker need → good identity-first leads.
 SEARCH_URLS = [
-    # Car listings mentioning tracker (seller has phone, may need tracker transfer/new one)
+    # ── Tracker need / installation ──────────────────────────────
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=need+car+tracker",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+required+insurance",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=insurance+requires+tracker",
@@ -74,15 +74,44 @@ SEARCH_URLS = [
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=need+tracker+installed",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=gps+tracker+needed",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+tracker+needed",
-    # Broader — cars for sale where tracker is mentioned (phone in listing)
+    # ── Cars for sale with tracker mention (seller has phone) ────
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+tracker+contact",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+system+for+sale",
-    # Immobiliser interest (adjacent high-intent security buyers)
+    # ── Immobiliser (adjacent high-intent security buyers) ───────
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=immobiliser+needed",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=immobiliser+install+wanted",
-    # Competitor churn
+    # ── Competitor churn ─────────────────────────────────────────
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+cartrack",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cartrack+contract+cancel",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+netstar+contract",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+tracker+subscription",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=mix+telematics+cancel",
+    # ── Finance / bank tracker requirements (new car buyers) ─────
+    # Banks (WesBank, MFC, Standard Bank) require trackers as loan conditions
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=wesbank+tracker+required",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=mfc+tracker+compulsory",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+finance+tracker+install",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=bank+requires+tracker",
+    # ── Just-bought buyer intent ──────────────────────────────────
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+car+need+tracker",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=new+car+tracker+install",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=bought+bakkie+need+tracker",
+    # ── Stolen / insurance claim (high urgency) ──────────────────
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=car+stolen+no+tracker",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+theft+need+tracker",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=hijacked+need+tracker",
+    # ── Bakkie / truck specific (higher-value leads) ─────────────
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=bakkie+tracker+needed",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=hilux+tracker+install",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=truck+gps+tracker",
+    # ── Geographic (Gauteng is highest-density market) ───────────
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+install+gauteng",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+installation+cape+town",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=gps+tracker+johannesburg",
+    # ── Price / value seekers (open to switching) ────────────────
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cheap+vehicle+tracker+south+africa",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=affordable+car+tracker",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=vehicle+tracking+subscription+cheaper",
 ]
 
 # HelloPeter — competitor complaint scraping (Tier 1 + Tier 2 signal)

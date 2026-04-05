@@ -114,7 +114,7 @@ def run_pipeline(source: str, dry_run: bool) -> dict:
 
     # Step 1: scrape or search
     if source == "gumtree":
-        scrape_cmd = ["uv", "run", str(SCRAPE), "gumtree", "--max", "50"]
+        scrape_cmd = ["uv", "run", str(SCRAPE), "gumtree", "--max", "100"]
     elif source == "hellopeter":
         scrape_cmd = ["uv", "run", str(SCRAPE), "hellopeter", "--max", "30"]
     elif source == "search":

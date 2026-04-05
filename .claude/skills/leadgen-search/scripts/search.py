@@ -135,6 +135,27 @@ LIFE_EVENT_QUERIES = [
     "just bought new car need tracker Gauteng forum",
 ]
 
+# Tier 2 — Public Facebook SA group posts (NOT Marketplace — those are auth-gated)
+# These query public FB pages and groups that Exa indexes. Individual posts in SA
+# car-trading groups often include name + phone in the post body.
+FB_GROUP_QUERIES = [
+    # Private car sale posts in SA groups (sellers include phone)
+    "site:facebook.com Toyota Hilux for sale private \"call\" \"0\" South Africa",
+    "site:facebook.com bakkie for sale private seller Gauteng phone",
+    "site:facebook.com car for sale private \"WhatsApp\" South Africa contact number",
+    # Tracker interest posts in SA car groups
+    "site:facebook.com car tracker needed South Africa \"call me\" OR \"WhatsApp\"",
+    "site:facebook.com need GPS tracker for car South Africa contact",
+    "site:facebook.com cancel Cartrack looking for alternative South Africa",
+    "site:facebook.com Netstar bad service looking for new tracker South Africa",
+    # Finance / bank tracker requirement
+    "site:facebook.com WesBank requires tracker South Africa \"contact\" OR \"call\"",
+    "site:facebook.com MFC tracker compulsory which one South Africa group",
+    # SA car groups — theft then tracker interest
+    "site:facebook.com car stolen Johannesburg need tracker installed \"call\"",
+    "site:facebook.com bakkie hijacked Gauteng need GPS tracker WhatsApp",
+]
+
 ALL_QUERIES = {
     "churn": CHURN_QUERIES,
     "forums": FORUM_QUERIES,
@@ -142,6 +163,7 @@ ALL_QUERIES = {
     "new_car": NEW_CAR_QUERIES,
     "insurance": INSURANCE_QUERIES,
     "life_events": LIFE_EVENT_QUERIES,
+    "fb_groups": FB_GROUP_QUERIES,
 }
 
 
@@ -273,7 +295,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--type",
-        choices=["churn", "forums", "theft", "new_car", "insurance", "life_events", "all"],
+        choices=["churn", "forums", "theft", "new_car", "insurance", "life_events", "fb_groups", "all"],
         default="all",
         help="Query type (default: all)",
     )
@@ -295,7 +317,7 @@ def main() -> None:
     if args.query:
         queries = [args.query]
     elif args.type == "all":
-        queries = CHURN_QUERIES + THEFT_QUERIES + NEW_CAR_QUERIES + INSURANCE_QUERIES + LIFE_EVENT_QUERIES + FORUM_QUERIES
+        queries = CHURN_QUERIES + THEFT_QUERIES + NEW_CAR_QUERIES + INSURANCE_QUERIES + LIFE_EVENT_QUERIES + FORUM_QUERIES + FB_GROUP_QUERIES
     else:
         queries = ALL_QUERIES[args.type]
 

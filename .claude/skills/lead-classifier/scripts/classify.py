@@ -554,9 +554,16 @@ def main() -> None:
             adjustment = signal_score_adjustment(ad, enrichment)
             adjusted_composite = composite + adjustment
 
-            if adjusted_composite < 5.0:
-                log.info("  [~] BUYER but adjusted score %.1f < 5.0 (base %.1f, adj %+.1f) — skipped",
-                         adjusted_composite, composite, adjustment)
+            # Identity-first threshold: if lead has a phone or full name, accept score >= 4.
+            # Anonymous leads (Exa/Tavily) keep the higher 5.0 bar.
+            phone_present = bool(ad.get("phone"))
+            name_present = bool(ad.get("name") or ad.get("reviewer_name"))
+            has_identity = phone_present or name_present
+            min_score = 4.0 if has_identity else 5.0
+
+            if adjusted_composite < min_score:
+                log.info("  [~] BUYER but score %.1f < %.1f (identity=%s) — skipped",
+                         adjusted_composite, min_score, has_identity)
                 llm_rejected_count += 1
             else:
                 lead = build_b2c_lead(ad, enrichment, adjusted_composite)
