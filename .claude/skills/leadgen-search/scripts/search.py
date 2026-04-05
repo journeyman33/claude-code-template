@@ -149,7 +149,7 @@ def exa_search(query: str, client: httpx.Client) -> list[dict]:
 
     payload = {
         "query": query,
-        "numResults": 5,
+        "numResults": 3,
         "type": "neural",
         "useAutoprompt": True,
         "contents": {"text": True, "highlights": True},
@@ -189,7 +189,7 @@ def tavily_search(query: str, client: httpx.Client) -> list[dict]:
         "api_key": TAVILY_API_KEY,
         "query": query,
         "search_depth": "advanced",
-        "max_results": 5,
+        "max_results": 3,
     }
 
     for attempt in range(MAX_RETRIES):

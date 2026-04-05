@@ -56,7 +56,7 @@ LOG_DIR  = Path.home() / "vault/projects/cogstack-leadgen/pipeline-runs"
 
 # ── Subprocess runner — mirrors b2c_run.py _run_subprocess() ─
 
-def run_step(cmd: list[str], label: str, stdin_data: str | None = None) -> tuple[bool, str]:
+def run_step(cmd: list[str], label: str, stdin_data: str | None = None, timeout: int = 600) -> tuple[bool, str]:
     """
     Run a subprocess step. Returns (success, stdout_text).
     stdin_data: pass previous step's stdout as stdin if provided.
@@ -68,7 +68,7 @@ def run_step(cmd: list[str], label: str, stdin_data: str | None = None) -> tuple
             input=stdin_data,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
         )
         for line in proc.stderr.strip().splitlines():
             log.debug("[%s] %s", label, line)
@@ -81,7 +81,7 @@ def run_step(cmd: list[str], label: str, stdin_data: str | None = None) -> tuple
         return True, proc.stdout
 
     except subprocess.TimeoutExpired:
-        log.error("[%s] Timed out after 600s", label)
+        log.error("[%s] Timed out after %ds", label, timeout)
         return False, ""
     except Exception as e:
         log.error("[%s] Unexpected error: %s", label, e)
@@ -137,9 +137,9 @@ def run_pipeline(source: str, dry_run: bool) -> dict:
 
     log.info("[%s] Scraped: %d leads", source, result["scraped"])
 
-    # Step 2: classify
+    # Step 2: classify (1800s timeout — LLM calls ~2-3s each)
     classify_cmd = ["uv", "run", str(CLASSIFY)]
-    ok, classify_out = run_step(classify_cmd, f"{source}-classify", stdin_data=scrape_out)
+    ok, classify_out = run_step(classify_cmd, f"{source}-classify", stdin_data=scrape_out, timeout=1800)
     if not ok:
         result["status"] = "classify_failed"
         result["finished_at"] = datetime.now(timezone.utc).isoformat()
