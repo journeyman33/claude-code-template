@@ -102,7 +102,7 @@ IRRELEVANT_SIGNALS = [
     "key cutting", "locksmith",
     "smart health ring", "wearable",
     "obd splitter", "y-splitter", "extension cable",
-    "head guide", "lodge", "safari",
+    "head guide", "game lodge", "safari lodge", "safari",
     "brand engagement", "social media marketing",
 ]
 
@@ -213,11 +213,16 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 }}
 
 Classification rules:
-- BUYER: a PRIVATE INDIVIDUAL explicitly expressing their OWN personal need — they want/need/are looking for a tracker for their vehicle, OR they are complaining about a competitor they subscribe to (churn signal). Forum posts, Reddit threads, Facebook posts, classified "wanted" ads count.
-- SELLER: a company or website PROMOTING its own tracking service/product. If the text says things like "our packages", "get a quote from us", "we offer", "sign up today", the source is a tracker company or vendor — classify SELLER. This applies even if they use language like "protect your vehicle" or mention insurance requirements.
-- IRRELEVANT: article/blog/comparison post without a specific person's intent, job listing, pet tracker, vehicle for sale, generic news.
+- BUYER: a PRIVATE INDIVIDUAL expressing their OWN personal need. This includes:
+  (a) Someone who wants/needs/is looking for a vehicle tracker
+  (b) CHURN SIGNAL — someone complaining about Cartrack, Tracker Connect, Netstar, MiX, or Beame (cancellation, poor service, unhappy). These people WILL need a new tracker provider. If source is "HelloPeter" and the review is about a competitor, classify BUYER.
+  (c) Theft/hijacking victim who needs a tracker
+  (d) Insurance requirement forcing them to get a tracker
+  Forum posts, Reddit threads, HelloPeter reviews, classified "wanted" ads count.
+- SELLER: a company or website PROMOTING its own tracking service/product.
+- IRRELEVANT: article/blog/comparison post without a specific person's complaint, job listing, pet tracker, generic news.
 
-CRITICAL: Search engines (Exa, Tavily) return tracker company websites and blog articles — these are SELLER or IRRELEVANT. Only classify BUYER if you can identify a SPECIFIC INDIVIDUAL expressing a personal purchase need."""
+CRITICAL: HelloPeter reviews where someone complains about a competitor ARE churn leads — classify as BUYER. The person is effectively saying "I need a new tracker company"."""
 
 
 # ── Pre-filter ───────────────────────────────────────────────
@@ -281,14 +286,17 @@ def pre_filter(ad: dict) -> str | None:
             return f"irrelevant signal: '{signal}'"
 
     # ── IDENTITY GATE — no LLM call for anonymous leads ──────────
-    # We need Full Name OR Phone Number before spending tokens.
-    # Phone: extracted by scraper from DOM/text.
-    # Name: either reviewer_name (HelloPeter) or poster name from Gumtree DOM.
-    # Exa/Tavily results are always anonymous — rejected here.
+    # We need a phone OR an identifiable name before spending tokens.
+    # HelloPeter reviewers use first names only — that's sufficient (real account, known complaint).
+    # Gumtree/Exa results require 2+ word name OR phone.
     phone = ad.get("phone")
     name = ad.get("name") or ad.get("reviewer_name") or ""
+    source = ad.get("source", "")
     has_phone = bool(phone)
-    has_name = bool(name and name.lower() not in ("unknown", "") and len(name.split()) >= 2)
+    is_hellopeter = source == "HelloPeter"
+    has_name = bool(name and name.lower() not in ("unknown", "") and (
+        is_hellopeter or len(name.split()) >= 2  # HelloPeter: first name OK
+    ))
     if not has_phone and not has_name:
         return "no identity: no phone or full name"
 
@@ -431,9 +439,21 @@ def build_b2c_lead(ad: dict, enrichment: dict, adjusted_composite: float) -> dic
     # pain_point: prefer raw lead field (HelloPeter scraper sets it), fall back to LLM
     pain_point = ad.get("pain_point") or enrichment.get("pain_point")
 
+    # ── Two-bucket status ─────────────────────────────────────
+    # "Pending QA"          — phone present, call centre can dial now
+    # "Pending Enrichment"  — named lead, needs Exa phone lookup first
+    phone = ad.get("phone")
+    full_name = enrichment.get("full_name") or ad.get("reviewer_name") or "Unknown"
+    if phone:
+        notion_status = "Pending QA"
+    elif full_name and full_name != "Unknown":
+        notion_status = "Pending Enrichment"
+    else:
+        notion_status = "Pending Enrichment"  # identity gate ensures name exists
+
     return {
-        "full_name": enrichment.get("full_name") or ad.get("reviewer_name") or "Unknown",
-        "phone": ad.get("phone"),
+        "full_name": full_name,
+        "phone": phone,
         "email": None,
         "province": province,
         "city": location,
@@ -444,16 +464,16 @@ def build_b2c_lead(ad: dict, enrichment: dict, adjusted_composite: float) -> dic
         "vehicle_make_model": enrichment.get("car_model"),
         "vehicle_year": None,
         "call_script_opener": enrichment.get("call_script_opener") or "",
-        "data_confidence": "High" if ad.get("phone") else "Medium",
+        "data_confidence": "High" if phone else "Medium",
         "sources_used": f"{source} public listing",
         "intent_strength": enrichment.get("intent_strength", 5),
         "urgency_score": enrichment.get("urgency_score", 5),
-        # New fields from brief
         "lead_source": source,
         "pain_point": pain_point,
         "car_model": enrichment.get("car_model"),
         "competitor": competitor,
         "urgency": urgency,
+        "status": notion_status,
     }
 
 

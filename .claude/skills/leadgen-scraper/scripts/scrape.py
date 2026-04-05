@@ -10,7 +10,7 @@
 # =============================================================
 # scrape.py — B2C scraper
 # Gumtree: Scrapling/curl_cffi (bypasses bot detection, extracts phone from DOM)
-# HelloPeter: Firecrawl API (JS-rendered review pages)
+# HelloPeter: Exa (finds review URLs) + Scrapling DynamicFetcher (renders each review page)
 # =============================================================
 # Usage:
 #   uv run scripts/scrape.py gumtree
@@ -132,9 +132,22 @@ GUMTREE_BASE = "https://www.gumtree.co.za"
 MAX_RETRIES = 3
 RETRY_DELAYS = [2, 5, 15]
 
-# ── Firecrawl ────────────────────────────────────────────────
+# ── Firecrawl (used only if EXA_API_KEY not set) ─────────────
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
 FIRECRAWL_BASE = "https://api.firecrawl.dev/v1"
+
+# ── Exa (for HelloPeter review URL discovery) ─────────────────
+EXA_API_KEY = os.environ.get("EXA_API_KEY")
+EXA_URL = "https://api.exa.ai/search"
+
+# HelloPeter Exa queries — one per competitor, targeting complaint/churn reviews
+HELLOPETER_EXA_QUERIES = [
+    ("site:hellopeter.com/cartrack/reviews unhappy cancel complaint", "Cartrack"),
+    ("site:hellopeter.com/tracker-connect/reviews unhappy cancel complaint", "Tracker Connect"),
+    ("site:hellopeter.com/netstar/reviews unhappy complaint switch", "Netstar"),
+    ("site:hellopeter.com/mix-telematics/reviews unhappy cancel complaint", "MiX Telematics"),
+    ("site:hellopeter.com/beame/reviews unhappy cancel complaint", "Beame"),
+]
 
 
 # ── Helpers — copied from gumtree_scrapling.py ───────────────
@@ -790,59 +803,155 @@ def run_gumtree(args: argparse.Namespace, _client: httpx.Client) -> list[dict]:
     return results
 
 
-def run_hellopeter(args: argparse.Namespace, client: httpx.Client) -> list[dict]:
-    """Scrape HelloPeter competitor complaint reviews for churn leads."""
-    results: list[dict] = []
-    seen_urls: set[str] = set()
-    all_review_urls: list[str] = []
-
-    # Phase 1: scrape each competitor's reviews listing page for review links
-    for target in HELLOPETER_TARGETS:
-        slug = target["slug"]
-        competitor = target["competitor"]
-        listing_url = f"{HELLOPETER_BASE}/{slug}/reviews"
-        log.info("Fetching HelloPeter reviews: %s (%s)", listing_url, competitor)
-        links = firecrawl_scrape_links(listing_url, client)
-        review_links = extract_review_links(links, slug)
-        log.info("Found %d review links for %s", len(review_links), competitor)
-        for link in review_links:
-            if link not in seen_urls:
-                seen_urls.add(link)
-                all_review_urls.append((link, competitor))
-        if len(all_review_urls) >= args.max_ads * 2:
-            break
-
-    if not all_review_urls:
-        log.warning("No HelloPeter review links collected — site may block scraping")
+def _exa_find_hellopeter_urls(client: httpx.Client, max_per_competitor: int = 6) -> list[tuple[str, str]]:
+    """
+    Use Exa to find recent HelloPeter review URLs for each competitor.
+    Returns list of (url, competitor) tuples.
+    HelloPeter's review listing page is a React SPA — Exa indexes the static review pages.
+    """
+    if not EXA_API_KEY:
+        log.warning("EXA_API_KEY not set — cannot discover HelloPeter review URLs")
         return []
 
-    # Apply max limit
-    to_scrape = all_review_urls[:args.max_ads]
-    urls_only = [u for u, _ in to_scrape]
-    url_to_competitor = {u: c for u, c in to_scrape}
+    results: list[tuple[str, str]] = []
+    seen: set[str] = set()
 
-    log.info("Batch-scraping %d HelloPeter review pages", len(urls_only))
+    for query, competitor in HELLOPETER_EXA_QUERIES:
+        log.info("Exa: searching HelloPeter reviews for %s", competitor)
+        try:
+            resp = client.post(
+                EXA_URL,
+                headers={"x-api-key": EXA_API_KEY, "Content-Type": "application/json"},
+                json={
+                    "query": query,
+                    "numResults": max_per_competitor,
+                    "type": "neural",
+                    "useAutoprompt": True,
+                },
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            for r in resp.json().get("results", []):
+                url = r.get("url", "")
+                if url and "/reviews/" in url and url not in seen:
+                    seen.add(url)
+                    results.append((url, competitor))
+                    log.debug("  Found: %s", url)
+        except Exception as e:
+            log.warning("Exa search failed for %s: %s", competitor, e)
+        time.sleep(0.5)
 
-    # Phase 2: batch-scrape review pages
-    batch_results = firecrawl_batch_scrape(urls_only, client)
-    log.info("Batch returned %d results", len(batch_results))
+    log.info("Exa found %d HelloPeter review URLs total", len(results))
+    return results
 
-    for item in batch_results:
-        metadata = item.get("metadata", {})
-        source_url = metadata.get("sourceURL") or metadata.get("url") or ""
-        markdown = item.get("markdown", "")
-        if not markdown:
-            log.debug("Empty markdown for %s — skipping", source_url)
-            continue
-        competitor = url_to_competitor.get(source_url, "Unknown")
-        lead = parse_hellopeter_markdown(markdown, source_url, competitor)
-        results.append(lead)
-        log.info(
-            '✓ HelloPeter: %s | reviewer: %s | loc: %s',
-            competitor,
-            lead.get("reviewer_name") or "?",
-            lead.get("location") or "?",
+
+def _parse_hellopeter_dynamic(url: str, competitor: str) -> dict | None:
+    """
+    Fetch a HelloPeter review page with DynamicFetcher (Playwright/Patchright)
+    and extract reviewer name, review text, location.
+    Individual review pages are React SPA — require JS execution.
+    """
+    try:
+        from scrapling.fetchers import DynamicFetcher
+    except ImportError:
+        log.error("scrapling not installed")
+        return None
+
+    try:
+        # network_idle=False + wait_for review content = much faster than network_idle=True
+        # (network_idle waits for all analytics/ads to finish loading — ~40s per page)
+        page = DynamicFetcher.fetch(
+            url,
+            headless=True,
+            network_idle=False,
+            wait_for='[itemprop="reviewBody"]',
+            timeout=20000,
         )
+    except Exception as e:
+        log.warning("DynamicFetcher failed for %s: %s", url, e)
+        return None
+
+    body = page.body.decode("utf-8", errors="ignore") if isinstance(page.body, bytes) else str(page.body)
+    if len(body) < 1000:
+        log.debug("Thin page for %s — skipping", url)
+        return None
+
+    # Reviewer name — first [itemprop="name"] is the reviewer, others are the business/review title
+    names = page.css('[itemprop="name"]::text').getall()
+    reviewer_name = names[0].strip() if names else None
+
+    # Review body
+    review_parts = page.css('[itemprop="reviewBody"]::text').getall()
+    description = " ".join(t.strip() for t in review_parts if t.strip()) if review_parts else None
+
+    # Review title (h1)
+    title = page.css("h1::text").get()
+    if title:
+        title = title.strip()
+
+    # Location — HelloPeter doesn't always expose it; check meta or structured data
+    location = None
+    for sel in ['[itemprop="addressLocality"]::text', '[class*="location"]::text']:
+        loc = page.css(sel).get()
+        if loc and loc.strip():
+            location = loc.strip()
+            break
+
+    # Pain point — infer from title keywords
+    pain_point = None
+    if title:
+        t = title.lower()
+        if any(k in t for k in ("cancel", "cancellation")):
+            pain_point = "wants to cancel"
+        elif any(k in t for k in ("switch", "alternative")):
+            pain_point = "looking to switch"
+        elif any(k in t for k in ("bad service", "poor service", "no service")):
+            pain_point = "poor service"
+        elif "stolen" in t or "hijack" in t:
+            pain_point = "vehicle theft"
+
+    log.info('✓ HelloPeter: %s | reviewer: %s | loc: %s', competitor, reviewer_name or "?", location or "?")
+
+    return {
+        "title": title or f"HelloPeter review — {competitor}",
+        "description": description or "",
+        "phone": None,  # HelloPeter never shows reviewer phones publicly
+        "location": location,
+        "price": None,
+        "adid": re.sub(r"[^a-z0-9]", "", url.lower())[-16:],
+        "url": url,
+        "source": "HelloPeter",
+        "competitor": competitor,
+        "pain_point": pain_point,
+        "reviewer_name": reviewer_name,
+        "name": reviewer_name,
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def run_hellopeter(args: argparse.Namespace, client: httpx.Client) -> list[dict]:
+    """
+    HelloPeter scraper — two phases:
+    1. Exa discovers recent review URLs (listing page is JS-heavy, Exa indexes the static pages)
+    2. DynamicFetcher (Playwright) renders each individual review page to extract name + text
+    """
+    # Phase 1: discover review URLs via Exa
+    all_review_urls = _exa_find_hellopeter_urls(client, max_per_competitor=max(6, args.max_ads // 5))
+
+    if not all_review_urls:
+        log.warning("No HelloPeter review URLs found — EXA_API_KEY may be missing")
+        return []
+
+    to_fetch = all_review_urls[:args.max_ads]
+    log.info("Fetching %d HelloPeter review pages via DynamicFetcher", len(to_fetch))
+
+    # Phase 2: render and parse each review page
+    results: list[dict] = []
+    for url, competitor in to_fetch:
+        lead = _parse_hellopeter_dynamic(url, competitor)
+        if lead:
+            results.append(lead)
+        time.sleep(1.0)  # polite delay between Playwright fetches
 
     return results
 
@@ -853,14 +962,16 @@ def main() -> None:
     log_dir = Path.home() / "vault/projects/cogstack-leadgen/logs"
     setup_logging(log_dir, "scraper")
 
-    if not FIRECRAWL_API_KEY:
-        log.error("FIRECRAWL_API_KEY not set in ~/.hermes/.env")
-        sys.exit(1)
+    # Firecrawl is only needed for Gumtree (batch scrape); HelloPeter now uses Exa + DynamicFetcher
+    if args.source == "gumtree" and not FIRECRAWL_API_KEY:
+        log.warning("FIRECRAWL_API_KEY not set — Gumtree batch scrape may fail")
 
-    headers = {
-        "Authorization": f"Bearer {FIRECRAWL_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    headers = {}
+    if FIRECRAWL_API_KEY:
+        headers = {
+            "Authorization": f"Bearer {FIRECRAWL_API_KEY}",
+            "Content-Type": "application/json",
+        }
 
     with httpx.Client(headers=headers) as client:
         if args.source == "gumtree":

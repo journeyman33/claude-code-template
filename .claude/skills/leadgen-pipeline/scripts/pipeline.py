@@ -50,6 +50,7 @@ SKILLS = Path.home() / "ugolino/.claude/skills"
 SCRAPE   = SKILLS / "leadgen-scraper/scripts/scrape.py"
 SEARCH   = SKILLS / "leadgen-search/scripts/search.py"
 CLASSIFY = SKILLS / "lead-classifier/scripts/classify.py"
+ENRICH   = SKILLS / "leadgen-search/scripts/enrich.py"
 SUBMIT   = SKILLS / "webhook-submit/scripts/submit.py"
 LOG_DIR  = Path.home() / "vault/projects/cogstack-leadgen/pipeline-runs"
 
@@ -153,12 +154,27 @@ def run_pipeline(source: str, dry_run: bool) -> dict:
 
     log.info("[%s] Classified: %d leads", source, result["classified"])
 
-    # Step 3: submit
+    # Step 3: enrich — Exa phone lookup for "Pending Enrichment" leads
+    enrich_cmd = ["uv", "run", str(ENRICH)]
+    ok, enrich_out = run_step(enrich_cmd, f"{source}-enrich", stdin_data=classify_out, timeout=300)
+    if not ok:
+        log.warning("[%s] Enrich step failed — submitting un-enriched leads", source)
+        enrich_out = classify_out  # fall through with original classify output
+
+    try:
+        enriched_leads = json.loads(enrich_out)
+        qa_count = sum(1 for l in enriched_leads if l.get("status") == "Pending QA")
+        enrich_count = sum(1 for l in enriched_leads if l.get("status") == "Pending Enrichment")
+        log.info("[%s] After enrich: %d Pending QA, %d Pending Enrichment", source, qa_count, enrich_count)
+    except Exception:
+        pass
+
+    # Step 4: submit
     submit_cmd = ["uv", "run", str(SUBMIT), "--source", source]
     if dry_run:
         submit_cmd.append("--dry-run")
 
-    ok, submit_out = run_step(submit_cmd, f"{source}-submit", stdin_data=classify_out)
+    ok, submit_out = run_step(submit_cmd, f"{source}-submit", stdin_data=enrich_out)
     submit_result = parse_submit_result(submit_out)
     result["submitted"] = submit_result.get("submitted", 0)
     result["batch_id"] = submit_result.get("batch_id", "")
@@ -235,7 +251,7 @@ def main() -> None:
             print(f"{src}: scraped={r.get('scraped', 0)}, classified={r.get('classified', 0)}, submitted={r.get('submitted', 0)}")
         else:
             print(f"{src}: FAILED ({r['status']})")
-    print(f"Total submitted: {total_submitted} leads → Notion Pending QA")
+    print(f"Total submitted: {total_submitted} leads → Notion (Pending QA + Pending Enrichment)")
 
     # Exit 1 if all pipelines failed
     all_failed = all(r["status"] != "ok" for r in pipeline_results)
