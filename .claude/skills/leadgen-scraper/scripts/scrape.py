@@ -80,15 +80,12 @@ SEARCH_URLS = [
     # Installation / service requests — people seeking tracker installation
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+installation+wanted",
     "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=install+car+tracker",
-    # New car purchases — people who just bought expensive vehicles (Tier 1)
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+car+need+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=new+car+need+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+bakkie+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+SUV+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+Fortuner",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+Land+Cruiser",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=just+bought+Ranger+tracker",
-    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=new+car+insurance+tracker",
+    # Insurance / finance requirement — forced buyers (Tier 1)
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=tracker+required+insurance",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=insurance+tracker+needed",
+    # Competitor switching (Tier 2 churn)
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+cartrack",
+    "https://www.gumtree.co.za/s-all-the-ads/v1b0p1?q=cancel+tracker+contract",
 ]
 
 # HelloPeter — competitor complaint scraping (Tier 1 + Tier 2 signal)

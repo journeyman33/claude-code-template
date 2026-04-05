@@ -108,6 +108,21 @@ BLOCKED_URL_SEGMENTS = [
     "/a-recruitment-services/", "/a-other-jobs/",
 ]
 
+# Tracker company domains — their own pages are SELLER not BUYER
+BLOCKED_DOMAINS = [
+    "cartrack.com", "cartrack.co.za",
+    "trackersa.co.za", "tracker.co.za",
+    "netstar.co.za",
+    "mixtelematics.com", "mixtelematics.co.za",
+    "beame.co.za",
+    "ctrack.co.za",
+    "mtrack.co.za",
+    "multitrack.co.za",
+    "mzansitracker.co.za",
+    "tgtracking.co.za",
+    "matrix.co.za",
+]
+
 # ── Location → Province mapping — copied verbatim from gumtree_to_b2c.py ─
 
 LOCATION_TO_PROVINCE: dict[str, str] = {
@@ -197,6 +212,11 @@ def pre_filter(ad: dict) -> str | None:
 
     if "-jobs/" in url:
         return "job listing URL"
+
+    # Tracker company's own domain — always seller, never buyer
+    for domain in BLOCKED_DOMAINS:
+        if domain in url:
+            return f"tracker company domain: {domain}"
 
     for signal in SELLER_SIGNALS:
         if signal in text:

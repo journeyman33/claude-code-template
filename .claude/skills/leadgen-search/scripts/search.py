@@ -97,6 +97,20 @@ FORUM_QUERIES = [
     "MyBroadband car tracker South Africa recommendation 2026",
 ]
 
+# Tier 3 — Life events: new car purchases (Exa/Tavily finds these better than Gumtree)
+LIFE_EVENT_QUERIES = [
+    "just bought a Fortuner need tracker South Africa",
+    "just bought Toyota Hilux need vehicle tracker",
+    "just bought Land Cruiser need GPS tracker South Africa",
+    "just bought Ford Ranger need tracker installed",
+    "just bought new car need tracker Gauteng",
+    "site:autotrader.co.za buyer inquiry tracker",
+    "site:cars.co.za \"just bought\" tracker South Africa",
+    "Facebook \"just bought\" Fortuner tracker South Africa",
+    "OLX South Africa new car buyer tracker needed",
+    "AutoTrader SA recently sold Fortuner buyer contact tracker",
+]
+
 # Tier 1 — Theft signals (fear = urgent buyer)
 THEFT_QUERIES = [
     "car stolen Johannesburg need GPS tracker 2026",
@@ -136,6 +150,7 @@ ALL_QUERIES = {
     "theft": THEFT_QUERIES,
     "new_car": NEW_CAR_QUERIES,
     "insurance": INSURANCE_QUERIES,
+    "life_events": LIFE_EVENT_QUERIES,
 }
 
 
@@ -267,7 +282,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--type",
-        choices=["churn", "forums", "theft", "new_car", "insurance", "all"],
+        choices=["churn", "forums", "theft", "new_car", "insurance", "life_events", "all"],
         default="all",
         help="Query type (default: all)",
     )
@@ -289,7 +304,7 @@ def main() -> None:
     if args.query:
         queries = [args.query]
     elif args.type == "all":
-        queries = CHURN_QUERIES + THEFT_QUERIES + NEW_CAR_QUERIES + INSURANCE_QUERIES + FORUM_QUERIES
+        queries = CHURN_QUERIES + THEFT_QUERIES + NEW_CAR_QUERIES + INSURANCE_QUERIES + LIFE_EVENT_QUERIES + FORUM_QUERIES
     else:
         queries = ALL_QUERIES[args.type]
 
