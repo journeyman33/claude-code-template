@@ -83,6 +83,16 @@ SELLER_SIGNALS = [
     "we deliver", "nationwide delivery", "free delivery",
     "wholesale", "bulk discount", "unit price",
     "(pty) ltd", "pty ltd",
+    # Tracker company marketing page signals
+    "get a quote", "request a quote", "get your quote",
+    "contact us today", "call us today", "sign up today",
+    "get started today", "start tracking today",
+    "our packages", "our plans", "our pricing", "our solution",
+    "view our packages", "view packages", "choose your plan",
+    "we offer", "we provide", "our trackers", "our units",
+    "per month*", "r per month", "r/month", "monthly fee",
+    "free fitment", "free installation included",
+    "download our app", "download the app",
 ]
 
 IRRELEVANT_SIGNALS = [
@@ -106,6 +116,24 @@ BLOCKED_URL_SEGMENTS = [
     "/a-property-", "/a-other-services/", "/a-legal-services/",
     "/a-other-business", "/a-business+to+business",
     "/a-recruitment-services/", "/a-other-jobs/",
+]
+
+# Consumer/forum domains — these are ALLOWED even if they mention "tracker" in path
+CONSUMER_DOMAINS = [
+    "reddit.com", "hellopeter.com", "mybroadband.co.za", "facebook.com",
+    "twitter.com", "instagram.com", "gumtree.co.za", "autotrader.co.za",
+    "cars.co.za", "olx.co.za", "arrivealive.co.za", "wheels24.co.za",
+    "carbibles.com", "car.co.za", "youtube.com",
+]
+
+# URL keyword patterns that indicate a tracker company service site
+# (catches unlisted domains like trackstar.co.za, fleetwatch.co.za, etc.)
+TRACKER_DOMAIN_KEYWORDS = [
+    "cartrack", "netstar", "mixtelematics", "mix-telematics",
+    "ctrack", "mtrack", "tgtrack", "tgtracking", "beame",
+    "fleetwatch", "trackstar", "gpstracking", "gpstracker",
+    "vehicletracking", "vehicle-tracking", "vehicletrack",
+    "autotrack", "autotracking",
 ]
 
 # Tracker company domains — their own pages are SELLER not BUYER
@@ -186,26 +214,41 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 }}
 
 Classification rules:
-- BUYER: person explicitly WANTS/NEEDS/is LOOKING FOR a vehicle tracker or tracking service, OR is complaining about a competitor (churn signal)
-- SELLER: person is OFFERING/SELLING a tracker, tracker product, or related accessory
-- IRRELEVANT: job listing, pet tracker, unrelated product, vehicle for sale, generic news article, product review without buyer intent"""
+- BUYER: a PRIVATE INDIVIDUAL explicitly expressing their OWN personal need — they want/need/are looking for a tracker for their vehicle, OR they are complaining about a competitor they subscribe to (churn signal). Forum posts, Reddit threads, Facebook posts, classified "wanted" ads count.
+- SELLER: a company or website PROMOTING its own tracking service/product. If the text says things like "our packages", "get a quote from us", "we offer", "sign up today", the source is a tracker company or vendor — classify SELLER. This applies even if they use language like "protect your vehicle" or mention insurance requirements.
+- IRRELEVANT: article/blog/comparison post without a specific person's intent, job listing, pet tracker, vehicle for sale, generic news.
+
+CRITICAL: Search engines (Exa, Tavily) return tracker company websites and blog articles — these are SELLER or IRRELEVANT. Only classify BUYER if you can identify a SPECIFIC INDIVIDUAL expressing a personal purchase need."""
 
 
 # ── Pre-filter ───────────────────────────────────────────────
+
+def _url_domain(url: str) -> str:
+    """Extract just the netloc/domain from a URL for matching."""
+    # Quick extraction without importing urllib for speed
+    try:
+        after_scheme = url.split("://", 1)[-1]
+        return after_scheme.split("/")[0].lower()
+    except Exception:
+        return url.lower()
+
 
 def pre_filter(ad: dict) -> str | None:
     """Return rejection reason or None if ad passes pre-filter."""
     title = (ad.get("title") or "").lower()
     desc = html.unescape(ad.get("description") or "").lower()
     text = f"{title} {desc}"
+    source = ad.get("source", "Gumtree")
 
     # Non-SA phone
     phone = ad.get("phone") or ""
     if phone and not phone.startswith("+27"):
         return f"non-SA phone: {phone}"
 
-    # URL in blocked category
+    # URL in blocked category (Gumtree path segments only)
     url = ad.get("url") or ""
+    domain = _url_domain(url)
+
     for seg in BLOCKED_URL_SEGMENTS:
         if seg in url:
             return f"blocked URL category: {seg}"
@@ -214,13 +257,25 @@ def pre_filter(ad: dict) -> str | None:
         return "job listing URL"
 
     # Tracker company's own domain — always seller, never buyer
-    for domain in BLOCKED_DOMAINS:
-        if domain in url:
-            return f"tracker company domain: {domain}"
+    for blocked in BLOCKED_DOMAINS:
+        if blocked in domain:
+            return f"tracker company domain: {blocked}"
 
-    for signal in SELLER_SIGNALS:
-        if signal in text:
-            return f"seller signal: '{signal}'"
+    # Unknown tracker company domain — check DOMAIN ONLY (not path)
+    # Skip for known consumer/forum domains
+    is_consumer = any(cd in domain for cd in CONSUMER_DOMAINS)
+    if not is_consumer:
+        for kw in TRACKER_DOMAIN_KEYWORDS:
+            if kw in domain:
+                return f"tracker company domain keyword: {kw}"
+
+    # SELLER_SIGNALS — only apply to Gumtree classifieds ads.
+    # Exa/Tavily results include forum posts where phrases like "monthly fee" or
+    # "we offer" appear in discussion context, not as seller signals.
+    if source == "Gumtree":
+        for signal in SELLER_SIGNALS:
+            if signal in text:
+                return f"seller signal: '{signal}'"
 
     for signal in IRRELEVANT_SIGNALS:
         if signal in text:

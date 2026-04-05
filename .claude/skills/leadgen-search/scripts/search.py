@@ -69,79 +69,70 @@ RETRY_DELAYS = [2, 5, 15]
 
 # ── Default B2C queries by type ──────────────────────────────
 
-# Tier 2 — Competitor churn (cancel signals)
+# Tier 1 — Competitor churn: HelloPeter complaints (real dissatisfied subscribers)
 CHURN_QUERIES = [
-    "unhappy Netstar customer South Africa wants to cancel",
-    "Tracker Connect complaints South Africa bad service",
-    "Cartrack alternative South Africa looking to switch",
-    "cancel Cartrack South Africa looking for alternative",
-    "Cartrack too expensive alternative South Africa",
-    "MiX Telematics complaints South Africa bad service",
-    "Beame tracker complaints South Africa",
-    "cancel Netstar South Africa tracker alternative",
     "site:hellopeter.com Cartrack complaint cancel",
     "site:hellopeter.com Tracker Connect unhappy customer",
     "site:hellopeter.com Netstar complaint South Africa",
     "site:hellopeter.com MiX Telematics bad service",
+    "site:hellopeter.com Beame tracker complaint",
+    "site:reddit.com/r/southafrica Cartrack cancel alternative",
+    "site:mybroadband.co.za Cartrack cancel looking for alternative",
+    "site:mybroadband.co.za Tracker Connect unhappy switch",
 ]
 
-# Tier 3 — Forum + community signals
+# Tier 1 — Forum buyer intent: real people asking for recommendations
 FORUM_QUERIES = [
-    "need car tracker South Africa MyBroadband forum",
-    "want vehicle tracking system South Africa",
-    "looking for GPS tracker Johannesburg Cape Town",
-    "which car tracker South Africa recommend",
-    "tracker installation Johannesburg price quote",
-    "tracker installation Cape Town price quote",
-    "Reddit r/southafrica car tracker recommendation",
-    "MyBroadband car tracker South Africa recommendation 2026",
+    "site:reddit.com/r/southafrica need car tracker recommend",
+    "site:reddit.com/r/southafrica which tracker South Africa",
+    "site:mybroadband.co.za need car tracker advice",
+    "site:mybroadband.co.za which vehicle tracker recommend South Africa",
+    "site:mybroadband.co.za tracker installation quote Gauteng",
+    "site:mybroadband.co.za car tracker looking for advice 2025",
+    "site:arrivealive.co.za car tracker recommendation",
+    "site:facebook.com need car tracker South Africa 2025",
 ]
 
-# Tier 3 — Life events: new car purchases (Exa/Tavily finds these better than Gumtree)
+# Tier 1 — Theft signals: forum posts by victims needing protection
+THEFT_QUERIES = [
+    "site:reddit.com/r/southafrica car stolen need tracker",
+    "site:mybroadband.co.za bakkie stolen need tracker installed",
+    "site:facebook.com car hijacked Gauteng need GPS tracker",
+    "site:reddit.com/r/southafrica vehicle stolen no tracker Johannesburg",
+    "MyBroadband forum car stolen need tracker advice 2025",
+    "Reddit South Africa car hijacked want tracking device",
+    "just had car stolen South Africa need tracker advice",
+    "bakkie stolen Johannesburg what tracker should I get",
+]
+
+# Tier 1 — New car purchases: individual buyers on forums
+NEW_CAR_QUERIES = [
+    "site:mybroadband.co.za just bought Fortuner which tracker",
+    "site:reddit.com/r/southafrica just bought new car need tracker",
+    "site:mybroadband.co.za bought Hilux which tracker recommend",
+    "site:facebook.com just bought Fortuner need tracker South Africa",
+    "MyBroadband just bought Ranger need tracker fitted 2025",
+    "Reddit just bought Land Cruiser South Africa tracker advice",
+    "just bought bakkie which tracker do I need South Africa",
+    "just bought new car insurance says need tracker South Africa",
+]
+
+# Tier 1 — Insurance requirement: individual buyers forced by insurer
+INSURANCE_QUERIES = [
+    "site:mybroadband.co.za insurance requires tracker which one",
+    "site:reddit.com/r/southafrica insurance says need tracker South Africa",
+    "insurance told me need tracker which one South Africa advice",
+    "insurer requires tracking device which tracker South Africa forum",
+    "insurance won't cover without tracker South Africa which one",
+]
+
+# Tier 3 — Life events (broader, may return mixed results)
 LIFE_EVENT_QUERIES = [
     "just bought a Fortuner need tracker South Africa",
-    "just bought Toyota Hilux need vehicle tracker",
+    "just bought Toyota Hilux need vehicle tracker advice",
     "just bought Land Cruiser need GPS tracker South Africa",
-    "just bought Ford Ranger need tracker installed",
-    "just bought new car need tracker Gauteng",
-    "site:autotrader.co.za buyer inquiry tracker",
-    "site:cars.co.za \"just bought\" tracker South Africa",
-    "Facebook \"just bought\" Fortuner tracker South Africa",
-    "OLX South Africa new car buyer tracker needed",
-    "AutoTrader SA recently sold Fortuner buyer contact tracker",
-]
-
-# Tier 1 — Theft signals (fear = urgent buyer)
-THEFT_QUERIES = [
-    "car stolen Johannesburg need GPS tracker 2026",
-    "vehicle hijacked South Africa tracking device",
-    "bakkie stolen Gauteng want tracker installed",
-    "car stolen no tracker South Africa",
-    "vehicle stolen Cape Town GPS tracking",
-    "bakkie stolen Cape Town",
-    "vehicle stolen Johannesburg no tracking",
-    "car hijacked Pretoria need tracker",
-]
-
-# Tier 1 — New car purchases (life event = high intent)
-NEW_CAR_QUERIES = [
-    "just bought car need tracker South Africa",
-    "just bought a Fortuner need tracker",
-    "just bought Land Cruiser South Africa tracker",
-    "just bought a Ranger bakkie tracker South Africa",
-    "just bought car insurance requires tracker South Africa",
-    "new car purchase tracker Gauteng",
-    "just bought SUV Johannesburg tracker needed",
-    "Facebook just bought Fortuner South Africa",
-]
-
-# Tier 1 — Insurance forced buyers (very high intent)
-INSURANCE_QUERIES = [
-    "car insurance requires tracker South Africa",
-    "insurance tracking device required South Africa",
-    "insurance company tracker requirement South Africa",
-    "insurance won't cover car without tracker South Africa",
-    "need tracker for insurance South Africa urgent",
+    "just bought Ford Ranger need tracker installed South Africa",
+    "just bought new car need tracker Gauteng forum",
 ]
 
 ALL_QUERIES = {
